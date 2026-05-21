@@ -8,6 +8,7 @@ const testRoutes = require("./routes/testRoutes");
 const orderRoutes = require("./routes/orderRoutes");
 const adminRoutes = require("./routes/adminRoutes");
 const locationRoutes = require("./routes/locationRoutes");
+const messageRoutes = require("./routes/messageRoutes");
 
 const app = express();
 
@@ -19,6 +20,7 @@ app.use("/api/test", testRoutes);
 app.use("/api/orders", orderRoutes);
 app.use("/api/admin", adminRoutes);
 app.use("/api/locations", locationRoutes);
+app.use("/api/messages", messageRoutes);
 
 app.get("/", (req, res) => {
     res.send("Servidor ADOMI funcionando");

@@ -9,6 +9,7 @@ import {
 } from "../services/orderService";
 
 import { updateMyLocation } from "../services/locationService";
+import OrderChat from "../components/OrderChat";
 
 function RepartidorDashboard() {
     const user = JSON.parse(localStorage.getItem("user"));
@@ -17,32 +18,52 @@ function RepartidorDashboard() {
     const [entregas, setEntregas] = useState([]);
     const [mensaje, setMensaje] = useState("");
     const [error, setError] = useState("");
+    const [notificacion, setNotificacion] = useState("");
     const [totalesReales, setTotalesReales] = useState({});
+    const [pedidoChat, setPedidoChat] = useState(null);
 
     const [ubicacionActiva, setUbicacionActiva] = useState(false);
     const [ubicacionMensaje, setUbicacionMensaje] = useState("");
 
-    const cargarDatos = async () => {
+    const cargarDatos = async (mostrarNotificacion = false) => {
         try {
             const pendientesData = await getPendingOrders();
             const entregasData = await getMyDeliveries();
 
-            setPendientes(pendientesData.pedidos);
-            setEntregas(entregasData.pedidos);
+            const nuevosPendientes = pendientesData.pedidos || [];
+
+            if (mostrarNotificacion && pendientes.length > 0) {
+                nuevosPendientes.forEach((pedidoNuevo) => {
+                    const existeAntes = pendientes.find(
+                        (pedidoAnterior) => pedidoAnterior.id === pedidoNuevo.id
+                    );
+
+                    if (!existeAntes) {
+                        setNotificacion(`Nuevo pedido disponible #${pedidoNuevo.id}`);
+
+                        setTimeout(() => {
+                            setNotificacion("");
+                        }, 5000);
+                    }
+                });
+            }
+
+            setPendientes(nuevosPendientes);
+            setEntregas(entregasData.pedidos || []);
         } catch (error) {
             setError("No se pudieron cargar los pedidos");
         }
     };
 
     useEffect(() => {
-        cargarDatos();
+        cargarDatos(false);
 
         const interval = setInterval(() => {
-            cargarDatos();
+            cargarDatos(true);
         }, 5000);
 
         return () => clearInterval(interval);
-    }, []);
+    }, [pendientes]);
 
     const cerrarSesion = () => {
         localStorage.clear();
@@ -70,10 +91,8 @@ function RepartidorDashboard() {
 
                 try {
                     await updateMyLocation(latitud, longitud);
-
                     setUbicacionActiva(true);
                     setUbicacionMensaje("Ubicación compartida correctamente");
-
                 } catch (error) {
                     setError("No se pudo guardar la ubicación");
                 }
@@ -90,7 +109,7 @@ function RepartidorDashboard() {
         try {
             await acceptOrder(id);
             setMensaje("Pedido aceptado correctamente");
-            cargarDatos();
+            cargarDatos(false);
         } catch (error) {
             setError(error.response?.data?.message || "Error al aceptar pedido");
         }
@@ -102,7 +121,7 @@ function RepartidorDashboard() {
         try {
             await updateOrderStatus(id, estado);
             setMensaje("Estado actualizado correctamente");
-            cargarDatos();
+            cargarDatos(false);
         } catch (error) {
             setError(error.response?.data?.message || "Error al cambiar estado");
         }
@@ -132,8 +151,7 @@ function RepartidorDashboard() {
                 [pedido.id]: ""
             });
 
-            cargarDatos();
-
+            cargarDatos(false);
         } catch (error) {
             setError(error.response?.data?.message || "Error al confirmar total");
         }
@@ -159,22 +177,15 @@ function RepartidorDashboard() {
             <nav className="navbar navbar-expand-lg navbar-dark bg-dark shadow-sm">
                 <div className="container">
                     <span className="navbar-brand fw-bold">
-                        <i className="bi bi-truck me-2"></i>
                         ADOMI Repartidor
                     </span>
 
-                    <div className="d-flex align-items-center gap-3">
-                        <span className="text-white d-none d-md-block">
-                            {user?.nombre}
-                        </span>
-
-                        <button
-                            className="btn btn-outline-light btn-sm"
-                            onClick={cerrarSesion}
-                        >
-                            Cerrar sesión
-                        </button>
-                    </div>
+                    <button
+                        className="btn btn-outline-light btn-sm"
+                        onClick={cerrarSesion}
+                    >
+                        Cerrar sesión
+                    </button>
                 </div>
             </nav>
 
@@ -187,16 +198,31 @@ function RepartidorDashboard() {
                         </h2>
 
                         <p className="text-muted mb-0">
-                            Acepta pedidos, actualiza estados y confirma el total real.
+                            Acepta pedidos, actualiza estados, confirma el total real y comunícate con el cliente.
                         </p>
+
+                        <div className="mt-3 d-flex flex-wrap gap-2">
+                            <span className="badge bg-secondary fs-6">
+                                Pendientes: {pendientes.length}
+                            </span>
+
+                            <span className="badge bg-primary fs-6">
+                                Mis entregas: {entregas.length}
+                            </span>
+                        </div>
 
                         <div className="mt-3">
                             <button
-                                className={ubicacionActiva ? "btn btn-success" : "btn btn-outline-success"}
+                                className={
+                                    ubicacionActiva
+                                        ? "btn btn-success"
+                                        : "btn btn-outline-success"
+                                }
                                 onClick={compartirUbicacion}
                             >
-                                <i className="bi bi-geo-alt me-2"></i>
-                                {ubicacionActiva ? "Ubicación compartida" : "Compartir ubicación"}
+                                {ubicacionActiva
+                                    ? "Ubicación compartida"
+                                    : "Compartir ubicación"}
                             </button>
 
                             {ubicacionMensaje && (
@@ -207,6 +233,12 @@ function RepartidorDashboard() {
                         </div>
                     </div>
                 </div>
+
+                {notificacion && (
+                    <div className="alert alert-info shadow-sm">
+                        {notificacion}
+                    </div>
+                )}
 
                 {mensaje && (
                     <div className="alert alert-success">
@@ -228,13 +260,15 @@ function RepartidorDashboard() {
 
                                 <div className="d-flex justify-content-between align-items-center mb-3">
                                     <h4 className="fw-bold mb-0">
-                                        <i className="bi bi-clock-history me-2 text-warning"></i>
                                         Pendientes
+                                        <span className="badge bg-danger ms-2">
+                                            {pendientes.length}
+                                        </span>
                                     </h4>
 
                                     <button
                                         className="btn btn-outline-dark btn-sm"
-                                        onClick={cargarDatos}
+                                        onClick={() => cargarDatos(false)}
                                     >
                                         Actualizar
                                     </button>
@@ -282,6 +316,28 @@ function RepartidorDashboard() {
 
                             </div>
                         </div>
+
+                        <div className="card border-0 shadow-sm rounded-4 mt-4">
+                            <div className="card-body p-4">
+                                <h4 className="fw-bold mb-3">
+                                    Chat del pedido
+                                </h4>
+
+                                {!pedidoChat ? (
+                                    <p className="text-muted mb-0">
+                                        Selecciona una entrega para abrir el chat.
+                                    </p>
+                                ) : (
+                                    <>
+                                        <p className="fw-semibold">
+                                            Pedido #{pedidoChat.id}
+                                        </p>
+
+                                        <OrderChat pedidoId={pedidoChat.id} />
+                                    </>
+                                )}
+                            </div>
+                        </div>
                     </div>
 
                     <div className="col-12 col-lg-7">
@@ -290,13 +346,12 @@ function RepartidorDashboard() {
 
                                 <div className="d-flex justify-content-between align-items-center mb-3">
                                     <h4 className="fw-bold mb-0">
-                                        <i className="bi bi-truck me-2 text-primary"></i>
                                         Mis entregas
                                     </h4>
 
                                     <button
                                         className="btn btn-outline-primary btn-sm"
-                                        onClick={cargarDatos}
+                                        onClick={() => cargarDatos(false)}
                                     >
                                         Actualizar
                                     </button>
@@ -317,6 +372,7 @@ function RepartidorDashboard() {
                                                     <th>Estimado</th>
                                                     <th>Real</th>
                                                     <th>Acción</th>
+                                                    <th>Chat</th>
                                                 </tr>
                                             </thead>
 
@@ -357,7 +413,6 @@ function RepartidorDashboard() {
 
                                                         <td style={{ minWidth: "280px" }}>
                                                             <div className="d-flex gap-2 flex-column flex-md-row">
-
                                                                 <select
                                                                     className="form-select form-select-sm"
                                                                     value={pedido.estado}
@@ -410,7 +465,6 @@ function RepartidorDashboard() {
                                                                 >
                                                                     OK
                                                                 </button>
-
                                                             </div>
 
                                                             {pedidoBloqueado(pedido) && (
@@ -419,11 +473,21 @@ function RepartidorDashboard() {
                                                                 </small>
                                                             )}
 
-                                                            {pedido.total_real !== null && !pedidoBloqueado(pedido) && (
-                                                                <small className="text-muted">
-                                                                    Total ya confirmado.
-                                                                </small>
-                                                            )}
+                                                            {pedido.total_real !== null &&
+                                                                !pedidoBloqueado(pedido) && (
+                                                                    <small className="text-muted">
+                                                                        Total ya confirmado.
+                                                                    </small>
+                                                                )}
+                                                        </td>
+
+                                                        <td>
+                                                            <button
+                                                                className="btn btn-outline-dark btn-sm"
+                                                                onClick={() => setPedidoChat(pedido)}
+                                                            >
+                                                                Chat
+                                                            </button>
                                                         </td>
                                                     </tr>
                                                 ))}

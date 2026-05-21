@@ -9,6 +9,7 @@ import {
 import { getDeliveryLocation } from "../services/locationService";
 
 import DeliveryMap from "../components/DeliveryMap";
+import OrderChat from "../components/OrderChat";
 
 function ClienteDashboard() {
     const user = JSON.parse(localStorage.getItem("user"));
@@ -25,14 +26,55 @@ function ClienteDashboard() {
     const [pedidoMapa, setPedidoMapa] = useState(null);
     const [ubicacionRepartidor, setUbicacionRepartidor] = useState(null);
 
+    const [pedidoChat, setPedidoChat] = useState(null);
+
     const [mensaje, setMensaje] = useState("");
     const [error, setError] = useState("");
+    const [notificacion, setNotificacion] = useState("");
     const [cargando, setCargando] = useState(false);
 
-    const cargarPedidos = async () => {
+    const cargarPedidos = async (mostrarNotificaciones = false) => {
         try {
             const data = await getMyOrders();
-            setPedidos(data.pedidos);
+            const nuevosPedidos = data.pedidos || [];
+
+            if (mostrarNotificaciones && pedidos.length > 0) {
+                nuevosPedidos.forEach((nuevoPedido) => {
+                    const pedidoAnterior = pedidos.find(
+                        (p) => p.id === nuevoPedido.id
+                    );
+
+                    if (
+                        pedidoAnterior &&
+                        pedidoAnterior.estado !== nuevoPedido.estado
+                    ) {
+                        setNotificacion(
+                            `Tu pedido #${nuevoPedido.id} cambió a: ${nuevoPedido.estado}`
+                        );
+
+                        setTimeout(() => {
+                            setNotificacion("");
+                        }, 5000);
+                    }
+
+                    if (
+                        pedidoAnterior &&
+                        pedidoAnterior.total_real !== nuevoPedido.total_real &&
+                        nuevoPedido.total_real !== null
+                    ) {
+                        setNotificacion(
+                            `El repartidor confirmó el total real del pedido #${nuevoPedido.id}`
+                        );
+
+                        setTimeout(() => {
+                            setNotificacion("");
+                        }, 5000);
+                    }
+                });
+            }
+
+            setPedidos(nuevosPedidos);
+
         } catch (error) {
             setError("No se pudieron cargar los pedidos");
         }
@@ -53,19 +95,18 @@ function ClienteDashboard() {
             setUbicacionRepartidor(data.ubicacion);
         } catch (error) {
             setUbicacionRepartidor(null);
-            setError("Ubicación del repartidor no disponible");
         }
     };
 
     useEffect(() => {
-        cargarPedidos();
+        cargarPedidos(false);
 
         const interval = setInterval(() => {
-            cargarPedidos();
+            cargarPedidos(true);
         }, 5000);
 
         return () => clearInterval(interval);
-    }, []);
+    }, [pedidos]);
 
     useEffect(() => {
         if (!pedidoSeleccionado) return;
@@ -74,7 +115,6 @@ function ClienteDashboard() {
 
         const interval = setInterval(() => {
             cargarHistorial(pedidoSeleccionado.id);
-            cargarPedidos();
         }, 5000);
 
         return () => clearInterval(interval);
@@ -97,6 +137,7 @@ function ClienteDashboard() {
 
         setMensaje("");
         setError("");
+        setNotificacion("");
         setCargando(true);
 
         try {
@@ -114,7 +155,7 @@ function ClienteDashboard() {
             setTotal("");
             setTipoServicio("restaurante");
 
-            cargarPedidos();
+            cargarPedidos(false);
 
         } catch (error) {
             setError(
@@ -126,17 +167,12 @@ function ClienteDashboard() {
     };
 
     const verHistorial = async (pedido) => {
-        setError("");
-        setMensaje("");
         setPedidoSeleccionado(pedido);
         await cargarHistorial(pedido.id);
     };
 
     const verMapa = async (pedido) => {
-        setError("");
-        setMensaje("");
         setPedidoMapa(pedido);
-        setUbicacionRepartidor(null);
 
         if (!pedido.repartidor_id) {
             setError("Este pedido aún no tiene repartidor asignado");
@@ -195,42 +231,25 @@ function ClienteDashboard() {
             <nav className="navbar navbar-expand-lg navbar-dark bg-primary shadow-sm">
                 <div className="container">
                     <span className="navbar-brand fw-bold">
-                        <i className="bi bi-bag-check me-2"></i>
                         ADOMI Cliente
                     </span>
 
-                    <div className="d-flex align-items-center gap-3">
-                        <span className="text-white d-none d-md-block">
-                            {user?.nombre}
-                        </span>
-
-                        <button
-                            className="btn btn-outline-light btn-sm"
-                            onClick={cerrarSesion}
-                        >
-                            Cerrar sesión
-                        </button>
-                    </div>
+                    <button
+                        className="btn btn-outline-light btn-sm"
+                        onClick={cerrarSesion}
+                    >
+                        Cerrar sesión
+                    </button>
                 </div>
             </nav>
 
             <main className="container py-4">
 
-                <div className="row mb-4">
-                    <div className="col-12">
-                        <div className="card border-0 shadow-sm rounded-4">
-                            <div className="card-body p-4">
-                                <h2 className="fw-bold mb-1">
-                                    Bienvenido, {user?.nombre}
-                                </h2>
-
-                                <p className="text-muted mb-0">
-                                    Desde este panel puedes crear pedidos, revisar estados y ver la ubicación del repartidor.
-                                </p>
-                            </div>
-                        </div>
+                {notificacion && (
+                    <div className="alert alert-info shadow-sm">
+                        {notificacion}
                     </div>
-                </div>
+                )}
 
                 {mensaje && (
                     <div className="alert alert-success">
@@ -247,18 +266,18 @@ function ClienteDashboard() {
                 <div className="row g-4">
 
                     <div className="col-12 col-lg-5">
+
                         <div className="card border-0 shadow-sm rounded-4">
                             <div className="card-body p-4">
 
                                 <h4 className="fw-bold mb-3">
-                                    <i className="bi bi-plus-circle me-2 text-primary"></i>
                                     Crear pedido
                                 </h4>
 
                                 <form onSubmit={handleCrearPedido}>
 
                                     <div className="mb-3">
-                                        <label className="form-label fw-semibold">
+                                        <label className="form-label">
                                             Tipo de servicio
                                         </label>
 
@@ -272,20 +291,16 @@ function ClienteDashboard() {
                                             </option>
 
                                             <option value="supermercado">
-                                                Supermercado / Abarrotes
+                                                Supermercado
                                             </option>
                                         </select>
                                     </div>
 
                                     <div className="mb-3">
-                                        <label className="form-label fw-semibold">
-                                            Descripción del pedido
-                                        </label>
-
                                         <textarea
                                             className="form-control"
                                             rows="4"
-                                            placeholder="Ejemplo: 2 hamburguesas, 1 gaseosa..."
+                                            placeholder="Descripción"
                                             value={descripcion}
                                             onChange={(e) => setDescripcion(e.target.value)}
                                             required
@@ -293,51 +308,32 @@ function ClienteDashboard() {
                                     </div>
 
                                     <div className="mb-3">
-                                        <label className="form-label fw-semibold">
-                                            Dirección de entrega
-                                        </label>
-
                                         <input
                                             type="text"
                                             className="form-control"
-                                            placeholder="Ejemplo: Barrio San Francisco, Jalapa"
+                                            placeholder="Dirección"
                                             value={direccion}
                                             onChange={(e) => setDireccion(e.target.value)}
                                             required
                                         />
                                     </div>
 
-                                    <div className="mb-4">
-                                        <label className="form-label fw-semibold">
-                                            Total estimado
-                                        </label>
-
-                                        <div className="input-group">
-                                            <span className="input-group-text">
-                                                Q
-                                            </span>
-
-                                            <input
-                                                type="number"
-                                                className="form-control"
-                                                placeholder="65.00"
-                                                value={total}
-                                                onChange={(e) => setTotal(e.target.value)}
-                                                required
-                                            />
-                                        </div>
-
-                                        <small className="text-muted">
-                                            Este valor puede cambiar cuando el repartidor confirme el total real.
-                                        </small>
+                                    <div className="mb-3">
+                                        <input
+                                            type="number"
+                                            className="form-control"
+                                            placeholder="Total estimado"
+                                            value={total}
+                                            onChange={(e) => setTotal(e.target.value)}
+                                            required
+                                        />
                                     </div>
 
                                     <button
-                                        type="submit"
-                                        className="btn btn-primary w-100 py-2 fw-semibold"
+                                        className="btn btn-primary w-100"
                                         disabled={cargando}
                                     >
-                                        {cargando ? "Creando pedido..." : "Crear pedido"}
+                                        {cargando ? "Creando..." : "Crear pedido"}
                                     </button>
 
                                 </form>
@@ -347,67 +343,56 @@ function ClienteDashboard() {
 
                         <div className="card border-0 shadow-sm rounded-4 mt-4">
                             <div className="card-body p-4">
+
                                 <h4 className="fw-bold mb-3">
-                                    <i className="bi bi-clock-history me-2 text-primary"></i>
                                     Historial
                                 </h4>
 
                                 {!pedidoSeleccionado ? (
-                                    <p className="text-muted mb-0">
-                                        Selecciona un pedido para ver su historial.
+                                    <p className="text-muted">
+                                        Selecciona un pedido.
                                     </p>
                                 ) : (
-                                    <>
-                                        <p className="fw-semibold">
-                                            Pedido #{pedidoSeleccionado.id}
-                                        </p>
+                                    <ul className="list-group list-group-flush">
+                                        {historial.map((item) => (
+                                            <li
+                                                className="list-group-item"
+                                                key={item.id}
+                                            >
+                                                <div className="d-flex justify-content-between">
+                                                    <span className={getEstadoBadge(item.estado)}>
+                                                        {item.estado}
+                                                    </span>
 
-                                        {historial.length === 0 ? (
-                                            <p className="text-muted">
-                                                Este pedido aún no tiene historial.
-                                            </p>
-                                        ) : (
-                                            <ul className="list-group list-group-flush">
-                                                {historial.map((item) => (
-                                                    <li
-                                                        className="list-group-item px-0"
-                                                        key={item.id}
-                                                    >
-                                                        <div className="d-flex justify-content-between gap-2">
-                                                            <span className={getEstadoBadge(item.estado)}>
-                                                                {item.estado}
-                                                            </span>
+                                                    <small className="text-muted">
+                                                        {new Date(item.fecha).toLocaleString()}
+                                                    </small>
+                                                </div>
 
-                                                            <small className="text-muted">
-                                                                {new Date(item.fecha).toLocaleString()}
-                                                            </small>
-                                                        </div>
-
-                                                        <p className="mb-0 mt-2">
-                                                            {item.comentario}
-                                                        </p>
-                                                    </li>
-                                                ))}
-                                            </ul>
-                                        )}
-                                    </>
+                                                <p className="mt-2 mb-0">
+                                                    {item.comentario}
+                                                </p>
+                                            </li>
+                                        ))}
+                                    </ul>
                                 )}
+
                             </div>
                         </div>
 
                         <div className="card border-0 shadow-sm rounded-4 mt-4">
                             <div className="card-body p-4">
+
                                 <h4 className="fw-bold mb-3">
-                                    <i className="bi bi-geo-alt me-2 text-success"></i>
                                     Ubicación del repartidor
                                 </h4>
 
                                 {!pedidoMapa ? (
-                                    <p className="text-muted mb-0">
-                                        Selecciona un pedido con repartidor asignado para ver el mapa.
+                                    <p className="text-muted">
+                                        Selecciona un pedido.
                                     </p>
                                 ) : !ubicacionRepartidor ? (
-                                    <p className="text-muted mb-0">
+                                    <p className="text-muted">
                                         Ubicación no disponible.
                                     </p>
                                 ) : (
@@ -416,109 +401,122 @@ function ClienteDashboard() {
                                         longitud={ubicacionRepartidor.longitud}
                                     />
                                 )}
+
                             </div>
                         </div>
-                    </div>
 
-                    <div className="col-12 col-lg-7">
-                        <div className="card border-0 shadow-sm rounded-4">
+                        <div className="card border-0 shadow-sm rounded-4 mt-4">
                             <div className="card-body p-4">
 
-                                <div className="d-flex justify-content-between align-items-center mb-3">
-                                    <h4 className="fw-bold mb-0">
-                                        <i className="bi bi-list-check me-2 text-primary"></i>
-                                        Mis pedidos
-                                    </h4>
+                                <h4 className="fw-bold mb-3">
+                                    Chat del pedido
+                                </h4>
 
-                                    <button
-                                        className="btn btn-outline-primary btn-sm"
-                                        onClick={cargarPedidos}
-                                    >
-                                        Actualizar
-                                    </button>
-                                </div>
-
-                                {pedidos.length === 0 ? (
-                                    <div className="text-center py-5">
-                                        <i className="bi bi-inbox fs-1 text-muted"></i>
-                                        <p className="text-muted mt-3">
-                                            Aún no tienes pedidos registrados.
-                                        </p>
-                                    </div>
+                                {!pedidoChat ? (
+                                    <p className="text-muted">
+                                        Selecciona un pedido para abrir el chat.
+                                    </p>
                                 ) : (
-                                    <div className="table-responsive">
-                                        <table className="table align-middle">
-                                            <thead>
-                                                <tr>
-                                                    <th>ID</th>
-                                                    <th>Servicio</th>
-                                                    <th>Estado</th>
-                                                    <th>Estimado</th>
-                                                    <th>Real</th>
-                                                    <th>Diferencia</th>
-                                                    <th>Historial</th>
-                                                    <th>Mapa</th>
-                                                </tr>
-                                            </thead>
-
-                                            <tbody>
-                                                {pedidos.map((pedido) => (
-                                                    <tr key={pedido.id}>
-                                                        <td>
-                                                            #{pedido.id}
-                                                        </td>
-
-                                                        <td className="text-capitalize">
-                                                            {pedido.tipo_servicio}
-                                                        </td>
-
-                                                        <td>
-                                                            <span className={getEstadoBadge(pedido.estado)}>
-                                                                {pedido.estado}
-                                                            </span>
-                                                        </td>
-
-                                                        <td>
-                                                            Q {pedido.total}
-                                                        </td>
-
-                                                        <td>
-                                                            {pedido.total_real
-                                                                ? `Q ${pedido.total_real}`
-                                                                : "Pendiente"}
-                                                        </td>
-
-                                                        <td>
-                                                            {getDiferencia(pedido.diferencia)}
-                                                        </td>
-
-                                                        <td>
-                                                            <button
-                                                                className="btn btn-outline-primary btn-sm"
-                                                                onClick={() => verHistorial(pedido)}
-                                                            >
-                                                                Ver
-                                                            </button>
-                                                        </td>
-
-                                                        <td>
-                                                            <button
-                                                                className="btn btn-outline-success btn-sm"
-                                                                onClick={() => verMapa(pedido)}
-                                                                disabled={!pedido.repartidor_id}
-                                                            >
-                                                                Mapa
-                                                            </button>
-                                                        </td>
-                                                    </tr>
-                                                ))}
-                                            </tbody>
-                                        </table>
-                                    </div>
+                                    <OrderChat pedidoId={pedidoChat.id} />
                                 )}
 
                             </div>
                         </div>
+
+                    </div>
+
+                    <div className="col-12 col-lg-7">
+
+                        <div className="card border-0 shadow-sm rounded-4">
+                            <div className="card-body p-4">
+
+                                <h4 className="fw-bold mb-3">
+                                    Mis pedidos
+                                </h4>
+
+                                <div className="table-responsive">
+                                    <table className="table align-middle">
+
+                                        <thead>
+                                            <tr>
+                                                <th>ID</th>
+                                                <th>Estado</th>
+                                                <th>Total</th>
+                                                <th>Real</th>
+                                                <th>Diferencia</th>
+                                                <th>Historial</th>
+                                                <th>Mapa</th>
+                                                <th>Chat</th>
+                                            </tr>
+                                        </thead>
+
+                                        <tbody>
+                                            {pedidos.map((pedido) => (
+                                                <tr key={pedido.id}>
+
+                                                    <td>
+                                                        #{pedido.id}
+                                                    </td>
+
+                                                    <td>
+                                                        <span className={getEstadoBadge(pedido.estado)}>
+                                                            {pedido.estado}
+                                                        </span>
+                                                    </td>
+
+                                                    <td>
+                                                        Q {pedido.total}
+                                                    </td>
+
+                                                    <td>
+                                                        {pedido.total_real
+                                                            ? `Q ${pedido.total_real}`
+                                                            : "Pendiente"}
+                                                    </td>
+
+                                                    <td>
+                                                        {getDiferencia(pedido.diferencia)}
+                                                    </td>
+
+                                                    <td>
+                                                        <button
+                                                            className="btn btn-outline-primary btn-sm"
+                                                            onClick={() => verHistorial(pedido)}
+                                                        >
+                                                            Ver
+                                                        </button>
+                                                    </td>
+
+                                                    <td>
+                                                        <button
+                                                            className="btn btn-outline-success btn-sm"
+                                                            onClick={() => verMapa(pedido)}
+                                                            disabled={!pedido.repartidor_id}
+                                                        >
+                                                            Mapa
+                                                        </button>
+                                                    </td>
+
+                                                    <td>
+                                                        <button
+                                                            className="btn btn-outline-dark btn-sm"
+                                                            onClick={() => setPedidoChat(pedido)}
+                                                            disabled={!pedido.repartidor_id}
+                                                        >
+                                                            Chat
+                                                        </button>
+                                                    </td>
+
+                                                </tr>
+                                            ))}
+                                        </tbody>
+
+                                    </table>
+                                </div>
+
+                            </div>
+                        </div>
+
                     </div>
 
                 </div>
