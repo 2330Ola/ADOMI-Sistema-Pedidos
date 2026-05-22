@@ -438,6 +438,58 @@ const confirmClientReception = (req, res) => {
     );
 };
 
+const reactivateCancelledOrder = (req, res) => {
+    const pedidoId = req.params.id;
+
+    const { repartidor_id } = req.body || {};
+
+    if (!repartidor_id) {
+        return res.status(400).json({
+            message: "Debe seleccionar un repartidor"
+        });
+    }
+
+    orderModel.reactivateCancelledOrder(
+        pedidoId,
+        repartidor_id,
+        (err, result) => {
+            if (err) {
+                return res.status(500).json({
+                    message: "Error al reactivar pedido",
+                    error: err
+                });
+            }
+
+            if (result.affectedRows === 0) {
+                return res.status(400).json({
+                    message: "Solo se pueden reactivar pedidos cancelados"
+                });
+            }
+
+            historyModel.createHistory(
+                pedidoId,
+                "reactivado",
+                `Pedido reactivado por administrador y asignado al repartidor ID ${repartidor_id}`,
+                () => {}
+            );
+
+            emitPedidoActualizado(req, pedidoId, {
+                estado: "aceptado",
+                repartidor_id,
+                observacion_entrega: null,
+                fecha_entrega: null,
+                confirmacion_cliente: null,
+                comentario_cliente: null,
+                fecha_confirmacion_cliente: null
+            });
+
+            res.json({
+                message: "Pedido reactivado correctamente"
+            });
+        }
+    );
+};
+
 const getAllOrders = (req, res) => {
     orderModel.getAllOrders((err, results) => {
         if (err) {
@@ -483,6 +535,7 @@ module.exports = {
     confirmRealTotal,
     confirmDelivery,
     confirmClientReception,
+    reactivateCancelledOrder,
     getAllOrders,
     getOrderHistory
 };

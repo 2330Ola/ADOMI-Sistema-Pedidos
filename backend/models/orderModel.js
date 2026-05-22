@@ -14,7 +14,11 @@ const createOrder = (
         VALUES (?, ?, ?, ?, ?)
     `;
 
-    db.query(sql, [clienteId, tipoServicio, descripcion, direccion, total], callback);
+    db.query(
+        sql,
+        [clienteId, tipoServicio, descripcion, direccion, total],
+        callback
+    );
 };
 
 const getOrdersByClient = (clienteId, callback) => {
@@ -118,7 +122,11 @@ const confirmRealTotal = (
         AND estado NOT IN ('entregado', 'cancelado')
     `;
 
-    db.query(sql, [totalReal, diferencia, pedidoId, repartidorId], callback);
+    db.query(
+        sql,
+        [totalReal, diferencia, pedidoId, repartidorId],
+        callback
+    );
 };
 
 const confirmDelivery = (
@@ -137,7 +145,11 @@ const confirmDelivery = (
         AND estado NOT IN ('entregado', 'cancelado')
     `;
 
-    db.query(sql, [observacionEntrega, pedidoId, repartidorId], callback);
+    db.query(
+        sql,
+        [observacionEntrega, pedidoId, repartidorId],
+        callback
+    );
 };
 
 const confirmClientReception = (
@@ -170,6 +182,32 @@ const confirmClientReception = (
     );
 };
 
+// ADMIN: Reactivar pedido cancelado y asignarlo a otro repartidor
+const reactivateCancelledOrder = (
+    pedidoId,
+    repartidorId,
+    callback
+) => {
+    const sql = `
+        UPDATE pedidos
+        SET estado = 'aceptado',
+            repartidor_id = ?,
+            observacion_entrega = NULL,
+            fecha_entrega = NULL,
+            confirmacion_cliente = NULL,
+            comentario_cliente = NULL,
+            fecha_confirmacion_cliente = NULL
+        WHERE id = ?
+        AND estado = 'cancelado'
+    `;
+
+    db.query(
+        sql,
+        [repartidorId, pedidoId],
+        callback
+    );
+};
+
 const getAllOrders = (callback) => {
     const sql = `
         SELECT 
@@ -198,5 +236,6 @@ module.exports = {
     confirmRealTotal,
     confirmDelivery,
     confirmClientReception,
+    reactivateCancelledOrder,
     getAllOrders
 };

@@ -16,6 +16,8 @@ import socket from "../socket";
 function ClienteDashboard() {
     const user = JSON.parse(localStorage.getItem("user"));
 
+    const [vista, setVista] = useState("crear");
+
     const [tipoServicio, setTipoServicio] = useState("restaurante");
     const [descripcion, setDescripcion] = useState("");
     const [direccion, setDireccion] = useState("");
@@ -23,19 +25,30 @@ function ClienteDashboard() {
 
     const [pedidos, setPedidos] = useState([]);
     const [historial, setHistorial] = useState([]);
-    const [pedidoSeleccionado, setPedidoSeleccionado] = useState(null);
 
-    const [pedidoMapa, setPedidoMapa] = useState(null);
+    const [pedidoActivoSeleccionado, setPedidoActivoSeleccionado] = useState(null);
+    const [pedidoHistorialSeleccionado, setPedidoHistorialSeleccionado] = useState(null);
     const [ubicacionRepartidor, setUbicacionRepartidor] = useState(null);
 
-    const [pedidoChat, setPedidoChat] = useState(null);
-    const [pedidoComprobante, setPedidoComprobante] = useState(null);
     const [comentariosCliente, setComentariosCliente] = useState({});
 
     const [mensaje, setMensaje] = useState("");
     const [error, setError] = useState("");
     const [notificacion, setNotificacion] = useState("");
     const [cargando, setCargando] = useState(false);
+
+    const pedidosActivos = pedidos.filter(
+        (pedido) =>
+            pedido.estado === "pendiente" ||
+            pedido.estado === "aceptado" ||
+            pedido.estado === "en camino"
+    );
+
+    const pedidosFinalizados = pedidos.filter(
+        (pedido) =>
+            pedido.estado === "entregado" ||
+            pedido.estado === "cancelado"
+    );
 
     const cargarPedidos = async () => {
         try {
@@ -44,15 +57,36 @@ function ClienteDashboard() {
 
             setPedidos(nuevosPedidos);
 
-            if (pedidoComprobante) {
-                const pedidoActualizado = nuevosPedidos.find(
-                    (p) => p.id === pedidoComprobante.id
+            if (pedidoActivoSeleccionado) {
+                const actualizado = nuevosPedidos.find(
+                    (p) => p.id === pedidoActivoSeleccionado.id
                 );
 
-                if (pedidoActualizado) {
-                    setPedidoComprobante(pedidoActualizado);
+                if (actualizado) {
+                    if (
+                        actualizado.estado === "entregado" ||
+                        actualizado.estado === "cancelado"
+                    ) {
+                        setPedidoActivoSeleccionado(null);
+                        setPedidoHistorialSeleccionado(actualizado);
+                        setVista("historial");
+                        await cargarHistorial(actualizado.id);
+                    } else {
+                        setPedidoActivoSeleccionado(actualizado);
+                    }
                 }
             }
+
+            if (pedidoHistorialSeleccionado) {
+                const actualizado = nuevosPedidos.find(
+                    (p) => p.id === pedidoHistorialSeleccionado.id
+                );
+
+                if (actualizado) {
+                    setPedidoHistorialSeleccionado(actualizado);
+                }
+            }
+
         } catch (error) {
             setError("No se pudieron cargar los pedidos");
         }
@@ -91,23 +125,44 @@ function ClienteDashboard() {
             setPedidos((prevPedidos) =>
                 prevPedidos.map((pedido) =>
                     pedido.id === pedidoActualizado.id
-                        ? pedidoActualizado
+                        ? { ...pedido, ...pedidoActualizado }
                         : pedido
                 )
             );
 
             if (
-                pedidoComprobante &&
-                pedidoComprobante.id === pedidoActualizado.id
+                pedidoActivoSeleccionado &&
+                pedidoActivoSeleccionado.id === pedidoActualizado.id
             ) {
-                setPedidoComprobante(pedidoActualizado);
+                const pedidoNuevo = {
+                    ...pedidoActivoSeleccionado,
+                    ...pedidoActualizado
+                };
+
+                if (
+                    pedidoNuevo.estado === "entregado" ||
+                    pedidoNuevo.estado === "cancelado"
+                ) {
+                    setPedidoActivoSeleccionado(null);
+                    setPedidoHistorialSeleccionado(pedidoNuevo);
+                    setVista("historial");
+                    cargarHistorial(pedidoNuevo.id);
+                } else {
+                    setPedidoActivoSeleccionado(pedidoNuevo);
+                }
             }
 
             if (
-                pedidoSeleccionado &&
-                pedidoSeleccionado.id === pedidoActualizado.id
+                pedidoHistorialSeleccionado &&
+                pedidoHistorialSeleccionado.id === pedidoActualizado.id
             ) {
-                cargarHistorial(pedidoActualizado.id);
+                const pedidoNuevo = {
+                    ...pedidoHistorialSeleccionado,
+                    ...pedidoActualizado
+                };
+
+                setPedidoHistorialSeleccionado(pedidoNuevo);
+                cargarHistorial(pedidoNuevo.id);
             }
 
             setNotificacion(`Pedido #${pedidoActualizado.id} actualizado`);
@@ -120,31 +175,32 @@ function ClienteDashboard() {
         return () => {
             socket.off("pedidoActualizado");
         };
-    }, [pedidoComprobante, pedidoSeleccionado]);
+    }, [pedidoActivoSeleccionado, pedidoHistorialSeleccionado]);
 
     useEffect(() => {
-        if (!pedidoSeleccionado) return;
-        cargarHistorial(pedidoSeleccionado.id);
-    }, [pedidoSeleccionado]);
+        if (!pedidoActivoSeleccionado?.repartidor_id) return;
 
-    useEffect(() => {
-        if (!pedidoMapa || !pedidoMapa.repartidor_id) return;
+        if (
+            pedidoActivoSeleccionado.estado === "entregado" ||
+            pedidoActivoSeleccionado.estado === "cancelado"
+        ) {
+            return;
+        }
 
-        cargarUbicacion(pedidoMapa.repartidor_id);
+        cargarUbicacion(pedidoActivoSeleccionado.repartidor_id);
 
         const interval = setInterval(() => {
-            cargarUbicacion(pedidoMapa.repartidor_id);
+            cargarUbicacion(pedidoActivoSeleccionado.repartidor_id);
         }, 5000);
 
         return () => clearInterval(interval);
-    }, [pedidoMapa]);
+    }, [pedidoActivoSeleccionado]);
 
     const handleCrearPedido = async (e) => {
         e.preventDefault();
 
         setMensaje("");
         setError("");
-        setNotificacion("");
         setCargando(true);
 
         try {
@@ -163,30 +219,30 @@ function ClienteDashboard() {
             setTipoServicio("restaurante");
 
             await cargarPedidos();
+            setVista("activo");
+
         } catch (error) {
             setError(
-                error.response?.data?.message || "Error al crear pedido"
+                error.response?.data?.message ||
+                "Error al crear pedido"
             );
         } finally {
             setCargando(false);
         }
     };
 
-    const verHistorial = async (pedido) => {
-        setPedidoSeleccionado(pedido);
-        await cargarHistorial(pedido.id);
-    };
-
-    const verMapa = async (pedido) => {
-        setPedidoMapa(pedido);
+    const seleccionarPedidoActivo = async (pedido) => {
+        setPedidoActivoSeleccionado(pedido);
         setUbicacionRepartidor(null);
 
-        if (!pedido.repartidor_id) {
-            setError("Este pedido aún no tiene repartidor asignado");
-            return;
+        if (pedido.repartidor_id) {
+            await cargarUbicacion(pedido.repartidor_id);
         }
+    };
 
-        await cargarUbicacion(pedido.repartidor_id);
+    const seleccionarPedidoHistorial = async (pedido) => {
+        setPedidoHistorialSeleccionado(pedido);
+        await cargarHistorial(pedido.id);
     };
 
     const handleConfirmarRecepcion = async (pedido, confirmacion) => {
@@ -209,7 +265,7 @@ function ClienteDashboard() {
                 fecha_confirmacion_cliente: new Date().toISOString()
             };
 
-            setPedidoComprobante(pedidoActualizado);
+            setPedidoHistorialSeleccionado(pedidoActualizado);
 
             setPedidos((prevPedidos) =>
                 prevPedidos.map((p) =>
@@ -226,6 +282,7 @@ function ClienteDashboard() {
 
             await cargarPedidos();
             await cargarHistorial(pedido.id);
+
         } catch (error) {
             setError(
                 error.response?.data?.message ||
@@ -279,24 +336,34 @@ function ClienteDashboard() {
 
     return (
         <div className="min-vh-100 bg-light">
+
             <nav className="navbar navbar-expand-lg navbar-dark bg-primary shadow-sm">
-                <div className="container">
+                <div className="container-fluid px-4">
                     <span className="navbar-brand fw-bold">
+                        <i className="bi bi-bag-check me-2"></i>
                         ADOMI Cliente
                     </span>
 
-                    <button
-                        className="btn btn-outline-light btn-sm"
-                        onClick={cerrarSesion}
-                    >
-                        Cerrar sesión
-                    </button>
+                    <div className="d-flex align-items-center gap-3">
+                        <span className="text-white d-none d-md-block">
+                            {user?.nombre}
+                        </span>
+
+                        <button
+                            className="btn btn-outline-light btn-sm"
+                            onClick={cerrarSesion}
+                        >
+                            Cerrar sesión
+                        </button>
+                    </div>
                 </div>
             </nav>
 
-            <main className="container py-4">
+            <main className="container-fluid px-4 py-4">
+
                 {notificacion && (
                     <div className="alert alert-info shadow-sm">
+                        <i className="bi bi-bell me-2"></i>
                         {notificacion}
                     </div>
                 )}
@@ -313,383 +380,592 @@ function ClienteDashboard() {
                     </div>
                 )}
 
-                <div className="row g-4">
-                    <div className="col-12 col-lg-5">
-                        <div className="card border-0 shadow-sm rounded-4">
-                            <div className="card-body p-4">
-                                <h4 className="fw-bold mb-3">
-                                    Crear pedido
-                                </h4>
+                <div className="card border-0 shadow-sm rounded-4 mb-4">
+                    <div className="card-body p-4">
+                        <h2 className="fw-bold mb-1">
+                            Hola, {user?.nombre}
+                        </h2>
 
-                                <form onSubmit={handleCrearPedido}>
-                                    <div className="mb-3">
-                                        <label className="form-label">
-                                            Tipo de servicio
-                                        </label>
-
-                                        <select
-                                            className="form-select"
-                                            value={tipoServicio}
-                                            onChange={(e) => setTipoServicio(e.target.value)}
-                                        >
-                                            <option value="restaurante">
-                                                Restaurante
-                                            </option>
-
-                                            <option value="supermercado">
-                                                Supermercado
-                                            </option>
-                                        </select>
-                                    </div>
-
-                                    <div className="mb-3">
-                                        <textarea
-                                            className="form-control"
-                                            rows="4"
-                                            placeholder="Descripción del pedido"
-                                            value={descripcion}
-                                            onChange={(e) => setDescripcion(e.target.value)}
-                                            required
-                                        ></textarea>
-                                    </div>
-
-                                    <div className="mb-3">
-                                        <input
-                                            type="text"
-                                            className="form-control"
-                                            placeholder="Dirección de entrega"
-                                            value={direccion}
-                                            onChange={(e) => setDireccion(e.target.value)}
-                                            required
-                                        />
-                                    </div>
-
-                                    <div className="mb-3">
-                                        <input
-                                            type="number"
-                                            className="form-control"
-                                            placeholder="Total estimado"
-                                            value={total}
-                                            onChange={(e) => setTotal(e.target.value)}
-                                            required
-                                        />
-                                    </div>
-
-                                    <button
-                                        className="btn btn-primary w-100"
-                                        disabled={cargando}
-                                    >
-                                        {cargando ? "Creando..." : "Crear pedido"}
-                                    </button>
-                                </form>
-                            </div>
-                        </div>
-
-                        <div className="card border-0 shadow-sm rounded-4 mt-4">
-                            <div className="card-body p-4">
-                                <h4 className="fw-bold mb-3">
-                                    Historial
-                                </h4>
-
-                                {!pedidoSeleccionado ? (
-                                    <p className="text-muted">
-                                        Selecciona un pedido para ver su historial.
-                                    </p>
-                                ) : historial.length === 0 ? (
-                                    <p className="text-muted">
-                                        Este pedido aún no tiene historial.
-                                    </p>
-                                ) : (
-                                    <ul className="list-group list-group-flush">
-                                        {historial.map((item) => (
-                                            <li
-                                                className="list-group-item"
-                                                key={item.id}
-                                            >
-                                                <div className="d-flex justify-content-between gap-2">
-                                                    <span className={getEstadoBadge(item.estado)}>
-                                                        {item.estado}
-                                                    </span>
-
-                                                    <small className="text-muted">
-                                                        {new Date(item.fecha).toLocaleString()}
-                                                    </small>
-                                                </div>
-
-                                                <p className="mt-2 mb-0">
-                                                    {item.comentario}
-                                                </p>
-                                            </li>
-                                        ))}
-                                    </ul>
-                                )}
-                            </div>
-                        </div>
-
-                        <div className="card border-0 shadow-sm rounded-4 mt-4">
-                            <div className="card-body p-4">
-                                <h4 className="fw-bold mb-3">
-                                    Ubicación del repartidor
-                                </h4>
-
-                                {!pedidoMapa ? (
-                                    <p className="text-muted">
-                                        Selecciona un pedido con repartidor asignado.
-                                    </p>
-                                ) : !ubicacionRepartidor ? (
-                                    <p className="text-muted">
-                                        Ubicación no disponible.
-                                    </p>
-                                ) : (
-                                    <DeliveryMap
-                                        latitud={ubicacionRepartidor.latitud}
-                                        longitud={ubicacionRepartidor.longitud}
-                                    />
-                                )}
-                            </div>
-                        </div>
-
-                        <div className="card border-0 shadow-sm rounded-4 mt-4">
-                            <div className="card-body p-4">
-                                <h4 className="fw-bold mb-3">
-                                    Chat del pedido
-                                </h4>
-
-                                {!pedidoChat ? (
-                                    <p className="text-muted">
-                                        Selecciona un pedido con repartidor asignado para abrir el chat.
-                                    </p>
-                                ) : (
-                                    <>
-                                        <p className="fw-semibold">
-                                            Pedido #{pedidoChat.id}
-                                        </p>
-
-                                        <OrderChat pedidoId={pedidoChat.id} />
-                                    </>
-                                )}
-                            </div>
-                        </div>
-
-                        <div className="card border-0 shadow-sm rounded-4 mt-4">
-                            <div className="card-body p-4">
-                                <h4 className="fw-bold mb-3">
-                                    Comprobante de entrega
-                                </h4>
-
-                                {!pedidoComprobante ? (
-                                    <p className="text-muted">
-                                        Selecciona un pedido entregado para ver su comprobante.
-                                    </p>
-                                ) : pedidoComprobante.estado !== "entregado" ? (
-                                    <p className="text-muted">
-                                        Este pedido aún no ha sido entregado.
-                                    </p>
-                                ) : (
-                                    <div className="border rounded-4 p-3 bg-light">
-                                        <p className="mb-2">
-                                            <strong>Pedido:</strong> #{pedidoComprobante.id}
-                                        </p>
-
-                                        <p className="mb-2">
-                                            <strong>Observación repartidor:</strong>{" "}
-                                            {pedidoComprobante.observacion_entrega || "Sin observación"}
-                                        </p>
-
-                                        <p className="mb-3">
-                                            <strong>Fecha entrega:</strong>{" "}
-                                            {pedidoComprobante.fecha_entrega
-                                                ? new Date(pedidoComprobante.fecha_entrega).toLocaleString()
-                                                : "Sin fecha"}
-                                        </p>
-
-                                        {pedidoComprobante.confirmacion_cliente ? (
-                                            <div className="alert alert-info mb-0">
-                                                <p className="mb-2">
-                                                    <strong>Respuesta enviada:</strong>{" "}
-                                                    {pedidoComprobante.confirmacion_cliente === "confirmado"
-                                                        ? "Pedido recibido correctamente"
-                                                        : "Problema reportado"}
-                                                </p>
-
-                                                {pedidoComprobante.comentario_cliente && (
-                                                    <p className="mb-0">
-                                                        <strong>Comentario:</strong>{" "}
-                                                        {pedidoComprobante.comentario_cliente}
-                                                    </p>
-                                                )}
-
-                                                {pedidoComprobante.fecha_confirmacion_cliente && (
-                                                    <small className="text-muted">
-                                                        {new Date(
-                                                            pedidoComprobante.fecha_confirmacion_cliente
-                                                        ).toLocaleString()}
-                                                    </small>
-                                                )}
-                                            </div>
-                                        ) : (
-                                            <>
-                                                <textarea
-                                                    className="form-control mb-3"
-                                                    rows="3"
-                                                    placeholder="Comentario opcional o describa el problema"
-                                                    value={
-                                                        comentariosCliente[pedidoComprobante.id] || ""
-                                                    }
-                                                    onChange={(e) =>
-                                                        setComentariosCliente({
-                                                            ...comentariosCliente,
-                                                            [pedidoComprobante.id]: e.target.value
-                                                        })
-                                                    }
-                                                ></textarea>
-
-                                                <div className="d-flex flex-column flex-md-row gap-2">
-                                                    <button
-                                                        className="btn btn-success"
-                                                        onClick={() =>
-                                                            handleConfirmarRecepcion(
-                                                                pedidoComprobante,
-                                                                "confirmado"
-                                                            )
-                                                        }
-                                                    >
-                                                        Confirmar recibido
-                                                    </button>
-
-                                                    <button
-                                                        className="btn btn-danger"
-                                                        onClick={() =>
-                                                            handleConfirmarRecepcion(
-                                                                pedidoComprobante,
-                                                                "problema"
-                                                            )
-                                                        }
-                                                    >
-                                                        Reportar problema
-                                                    </button>
-                                                </div>
-                                            </>
-                                        )}
-                                    </div>
-                                )}
-                            </div>
-                        </div>
-                    </div>
-
-                    <div className="col-12 col-lg-7">
-                        <div className="card border-0 shadow-sm rounded-4">
-                            <div className="card-body p-4">
-                                <div className="d-flex justify-content-between align-items-center mb-3">
-                                    <h4 className="fw-bold mb-0">
-                                        Mis pedidos
-                                    </h4>
-
-                                    <button
-                                        className="btn btn-outline-primary btn-sm"
-                                        onClick={cargarPedidos}
-                                    >
-                                        Actualizar
-                                    </button>
-                                </div>
-
-                                {pedidos.length === 0 ? (
-                                    <p className="text-muted text-center py-4">
-                                        Aún no tienes pedidos registrados.
-                                    </p>
-                                ) : (
-                                    <div className="table-responsive">
-                                        <table className="table align-middle">
-                                            <thead>
-                                                <tr>
-                                                    <th>ID</th>
-                                                    <th>Servicio</th>
-                                                    <th>Estado</th>
-                                                    <th>Total</th>
-                                                    <th>Real</th>
-                                                    <th>Diferencia</th>
-                                                    <th>Historial</th>
-                                                    <th>Mapa</th>
-                                                    <th>Chat</th>
-                                                    <th>Comprobante</th>
-                                                </tr>
-                                            </thead>
-
-                                            <tbody>
-                                                {pedidos.map((pedido) => (
-                                                    <tr key={pedido.id}>
-                                                        <td>#{pedido.id}</td>
-
-                                                        <td className="text-capitalize">
-                                                            {pedido.tipo_servicio}
-                                                        </td>
-
-                                                        <td>
-                                                            <span className={getEstadoBadge(pedido.estado)}>
-                                                                {pedido.estado}
-                                                            </span>
-                                                        </td>
-
-                                                        <td>Q {pedido.total}</td>
-
-                                                        <td>
-                                                            {pedido.total_real
-                                                                ? `Q ${pedido.total_real}`
-                                                                : "Pendiente"}
-                                                        </td>
-
-                                                        <td>
-                                                            {getDiferencia(pedido.diferencia)}
-                                                        </td>
-
-                                                        <td>
-                                                            <button
-                                                                className="btn btn-outline-primary btn-sm"
-                                                                onClick={() => verHistorial(pedido)}
-                                                            >
-                                                                Ver
-                                                            </button>
-                                                        </td>
-
-                                                        <td>
-                                                            <button
-                                                                className="btn btn-outline-success btn-sm"
-                                                                onClick={() => verMapa(pedido)}
-                                                                disabled={!pedido.repartidor_id}
-                                                            >
-                                                                Mapa
-                                                            </button>
-                                                        </td>
-
-                                                        <td>
-                                                            <button
-                                                                className="btn btn-outline-dark btn-sm"
-                                                                onClick={() => setPedidoChat(pedido)}
-                                                                disabled={!pedido.repartidor_id}
-                                                            >
-                                                                Chat
-                                                            </button>
-                                                        </td>
-
-                                                        <td>
-                                                            <button
-                                                                className="btn btn-outline-info btn-sm"
-                                                                onClick={() => setPedidoComprobante(pedido)}
-                                                            >
-                                                                Ver
-                                                            </button>
-                                                        </td>
-                                                    </tr>
-                                                ))}
-                                            </tbody>
-                                        </table>
-                                    </div>
-                                )}
-                            </div>
-                        </div>
+                        <p className="text-muted mb-0">
+                            Crea pedidos, sigue tus envíos activos y confirma tus entregas.
+                        </p>
                     </div>
                 </div>
+
+                <div className="row g-3 mb-4">
+
+                    <div className="col-12 col-md-4">
+                        <button
+                            className={`card border-0 shadow-sm rounded-4 w-100 text-start ${
+                                vista === "crear" ? "border border-primary" : ""
+                            }`}
+                            onClick={() => setVista("crear")}
+                        >
+                            <div className="card-body p-4">
+                                <div className="fs-1 text-primary mb-2">
+                                    <i className="bi bi-plus-circle"></i>
+                                </div>
+
+                                <h5 className="fw-bold">
+                                    Crear pedido
+                                </h5>
+
+                                <p className="text-muted mb-0">
+                                    Inicia un nuevo pedido.
+                                </p>
+                            </div>
+                        </button>
+                    </div>
+
+                    <div className="col-12 col-md-4">
+                        <button
+                            className={`card border-0 shadow-sm rounded-4 w-100 text-start ${
+                                vista === "activo" ? "border border-warning" : ""
+                            }`}
+                            onClick={() => setVista("activo")}
+                        >
+                            <div className="card-body p-4">
+                                <div className="fs-1 text-warning mb-2">
+                                    <i className="bi bi-truck"></i>
+                                </div>
+
+                                <h5 className="fw-bold">
+                                    Pedido en curso
+                                </h5>
+
+                                <p className="text-muted mb-0">
+                                    {pedidosActivos.length} pedido(s) activo(s).
+                                </p>
+                            </div>
+                        </button>
+                    </div>
+
+                    <div className="col-12 col-md-4">
+                        <button
+                            className={`card border-0 shadow-sm rounded-4 w-100 text-start ${
+                                vista === "historial" ? "border border-success" : ""
+                            }`}
+                            onClick={() => setVista("historial")}
+                        >
+                            <div className="card-body p-4">
+                                <div className="fs-1 text-success mb-2">
+                                    <i className="bi bi-clock-history"></i>
+                                </div>
+
+                                <h5 className="fw-bold">
+                                    Historial
+                                </h5>
+
+                                <p className="text-muted mb-0">
+                                    {pedidosFinalizados.length} pedido(s) finalizado(s).
+                                </p>
+                            </div>
+                        </button>
+                    </div>
+
+                </div>
+
+                {vista === "crear" && (
+                    <div className="row justify-content-center">
+                        <div className="col-12 col-xl-7">
+                            <div className="card border-0 shadow-sm rounded-4">
+                                <div className="card-body p-4">
+
+                                    <h4 className="fw-bold mb-3">
+                                        <i className="bi bi-plus-circle me-2 text-primary"></i>
+                                        Crear nuevo pedido
+                                    </h4>
+
+                                    <form onSubmit={handleCrearPedido}>
+
+                                        <div className="mb-3">
+                                            <label className="form-label fw-semibold">
+                                                Tipo de servicio
+                                            </label>
+
+                                            <select
+                                                className="form-select"
+                                                value={tipoServicio}
+                                                onChange={(e) => setTipoServicio(e.target.value)}
+                                            >
+                                                <option value="restaurante">
+                                                    Restaurante
+                                                </option>
+
+                                                <option value="supermercado">
+                                                    Supermercado
+                                                </option>
+                                            </select>
+                                        </div>
+
+                                        <div className="mb-3">
+                                            <label className="form-label fw-semibold">
+                                                Descripción
+                                            </label>
+
+                                            <textarea
+                                                className="form-control"
+                                                rows="4"
+                                                placeholder="Ejemplo: 2 hamburguesas, 1 gaseosa..."
+                                                value={descripcion}
+                                                onChange={(e) => setDescripcion(e.target.value)}
+                                                required
+                                            ></textarea>
+                                        </div>
+
+                                        <div className="mb-3">
+                                            <label className="form-label fw-semibold">
+                                                Dirección
+                                            </label>
+
+                                            <input
+                                                type="text"
+                                                className="form-control"
+                                                placeholder="Dirección de entrega"
+                                                value={direccion}
+                                                onChange={(e) => setDireccion(e.target.value)}
+                                                required
+                                            />
+                                        </div>
+
+                                        <div className="mb-4">
+                                            <label className="form-label fw-semibold">
+                                                Total estimado
+                                            </label>
+
+                                            <div className="input-group">
+                                                <span className="input-group-text">
+                                                    Q
+                                                </span>
+
+                                                <input
+                                                    type="number"
+                                                    className="form-control"
+                                                    placeholder="65.00"
+                                                    value={total}
+                                                    onChange={(e) => setTotal(e.target.value)}
+                                                    required
+                                                />
+                                            </div>
+                                        </div>
+
+                                        <button
+                                            className="btn btn-primary w-100 py-2 fw-semibold"
+                                            disabled={cargando}
+                                        >
+                                            {cargando ? "Creando..." : "Crear pedido"}
+                                        </button>
+
+                                    </form>
+
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {vista === "activo" && (
+                    <div className="row g-4">
+
+                        <div className="col-12 col-xl-5">
+                            <div className="card border-0 shadow-sm rounded-4">
+                                <div className="card-body p-4">
+                                    <div className="d-flex justify-content-between align-items-center mb-3">
+                                        <h4 className="fw-bold mb-0">
+                                            Pedidos en curso
+                                        </h4>
+
+                                        <button
+                                            className="btn btn-outline-primary btn-sm"
+                                            onClick={cargarPedidos}
+                                        >
+                                            Actualizar
+                                        </button>
+                                    </div>
+
+                                    {pedidosActivos.length === 0 ? (
+                                        <p className="text-muted text-center py-4">
+                                            No tienes pedidos activos.
+                                        </p>
+                                    ) : (
+                                        pedidosActivos.map((pedido) => (
+                                            <button
+                                                key={pedido.id}
+                                                className={`card w-100 text-start border-0 shadow-sm rounded-4 mb-3 ${
+                                                    pedidoActivoSeleccionado?.id === pedido.id
+                                                        ? "border border-primary"
+                                                        : ""
+                                                }`}
+                                                onClick={() => seleccionarPedidoActivo(pedido)}
+                                            >
+                                                <div className="card-body">
+                                                    <div className="d-flex justify-content-between align-items-start">
+                                                        <div>
+                                                            <h5 className="fw-bold mb-1">
+                                                                Pedido #{pedido.id}
+                                                            </h5>
+
+                                                            <p className="text-muted mb-1 text-capitalize">
+                                                                {pedido.tipo_servicio}
+                                                            </p>
+                                                        </div>
+
+                                                        <span className={getEstadoBadge(pedido.estado)}>
+                                                            {pedido.estado}
+                                                        </span>
+                                                    </div>
+
+                                                    <p className="mb-2">
+                                                        {pedido.descripcion}
+                                                    </p>
+
+                                                    <small className="text-muted">
+                                                        Total estimado: Q {pedido.total}
+                                                    </small>
+                                                </div>
+                                            </button>
+                                        ))
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="col-12 col-xl-7">
+                            {!pedidoActivoSeleccionado ? (
+                                <div className="card border-0 shadow-sm rounded-4">
+                                    <div className="card-body p-5 text-center">
+                                        <i className="bi bi-truck fs-1 text-muted"></i>
+
+                                        <p className="text-muted mt-3 mb-0">
+                                            Selecciona un pedido en curso para ver mapa, chat y detalle.
+                                        </p>
+                                    </div>
+                                </div>
+                            ) : (
+                                <>
+                                    <div className="card border-0 shadow-sm rounded-4 mb-4">
+                                        <div className="card-body p-4">
+                                            <div className="d-flex justify-content-between align-items-start mb-3">
+                                                <div>
+                                                    <h4 className="fw-bold mb-1">
+                                                        Pedido #{pedidoActivoSeleccionado.id}
+                                                    </h4>
+
+                                                    <p className="text-muted mb-0">
+                                                        {pedidoActivoSeleccionado.direccion}
+                                                    </p>
+                                                </div>
+
+                                                <span className={getEstadoBadge(pedidoActivoSeleccionado.estado)}>
+                                                    {pedidoActivoSeleccionado.estado}
+                                                </span>
+                                            </div>
+
+                                            <div className="row g-3">
+                                                <div className="col-12 col-md-4">
+                                                    <div className="bg-light rounded-4 p-3">
+                                                        <small className="text-muted">
+                                                            Estimado
+                                                        </small>
+
+                                                        <h5 className="fw-bold mb-0">
+                                                            Q {pedidoActivoSeleccionado.total}
+                                                        </h5>
+                                                    </div>
+                                                </div>
+
+                                                <div className="col-12 col-md-4">
+                                                    <div className="bg-light rounded-4 p-3">
+                                                        <small className="text-muted">
+                                                            Real
+                                                        </small>
+
+                                                        <h5 className="fw-bold mb-0">
+                                                            {pedidoActivoSeleccionado.total_real
+                                                                ? `Q ${pedidoActivoSeleccionado.total_real}`
+                                                                : "Pendiente"}
+                                                        </h5>
+                                                    </div>
+                                                </div>
+
+                                                <div className="col-12 col-md-4">
+                                                    <div className="bg-light rounded-4 p-3">
+                                                        <small className="text-muted">
+                                                            Diferencia
+                                                        </small>
+
+                                                        <h5 className="fw-bold mb-0">
+                                                            {getDiferencia(pedidoActivoSeleccionado.diferencia)}
+                                                        </h5>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div className="card border-0 shadow-sm rounded-4 mb-4">
+                                        <div className="card-body p-4">
+                                            <h4 className="fw-bold mb-3">
+                                                <i className="bi bi-geo-alt me-2 text-success"></i>
+                                                Ubicación del repartidor
+                                            </h4>
+
+                                            {!pedidoActivoSeleccionado.repartidor_id ? (
+                                                <p className="text-muted mb-0">
+                                                    Aún no hay repartidor asignado.
+                                                </p>
+                                            ) : !ubicacionRepartidor ? (
+                                                <p className="text-muted mb-0">
+                                                    Ubicación no disponible.
+                                                </p>
+                                            ) : (
+                                                <DeliveryMap
+                                                    latitud={ubicacionRepartidor.latitud}
+                                                    longitud={ubicacionRepartidor.longitud}
+                                                />
+                                            )}
+                                        </div>
+                                    </div>
+
+                                    <div className="card border-0 shadow-sm rounded-4">
+                                        <div className="card-body p-4">
+                                            <h4 className="fw-bold mb-3">
+                                                <i className="bi bi-chat-dots me-2 text-dark"></i>
+                                                Chat con repartidor
+                                            </h4>
+
+                                            {!pedidoActivoSeleccionado.repartidor_id ? (
+                                                <p className="text-muted mb-0">
+                                                    El chat estará disponible cuando un repartidor acepte el pedido.
+                                                </p>
+                                            ) : (
+                                                <OrderChat pedidoId={pedidoActivoSeleccionado.id} />
+                                            )}
+                                        </div>
+                                    </div>
+                                </>
+                            )}
+                        </div>
+
+                    </div>
+                )}
+
+                {vista === "historial" && (
+                    <div className="row g-4">
+
+                        <div className="col-12 col-xl-5">
+                            <div className="card border-0 shadow-sm rounded-4">
+                                <div className="card-body p-4">
+
+                                    <h4 className="fw-bold mb-3">
+                                        Historial de pedidos
+                                    </h4>
+
+                                    {pedidosFinalizados.length === 0 ? (
+                                        <p className="text-muted text-center py-4">
+                                            Aún no tienes pedidos finalizados.
+                                        </p>
+                                    ) : (
+                                        pedidosFinalizados.map((pedido) => (
+                                            <button
+                                                key={pedido.id}
+                                                className={`card w-100 text-start border-0 shadow-sm rounded-4 mb-3 ${
+                                                    pedidoHistorialSeleccionado?.id === pedido.id
+                                                        ? "border border-success"
+                                                        : ""
+                                                }`}
+                                                onClick={() => seleccionarPedidoHistorial(pedido)}
+                                            >
+                                                <div className="card-body">
+                                                    <div className="d-flex justify-content-between align-items-start">
+                                                        <div>
+                                                            <h5 className="fw-bold mb-1">
+                                                                Pedido #{pedido.id}
+                                                            </h5>
+
+                                                            <p className="text-muted mb-1 text-capitalize">
+                                                                {pedido.tipo_servicio}
+                                                            </p>
+                                                        </div>
+
+                                                        <span className={getEstadoBadge(pedido.estado)}>
+                                                            {pedido.estado}
+                                                        </span>
+                                                    </div>
+
+                                                    <small className="text-muted">
+                                                        Total: Q {pedido.total_real || pedido.total}
+                                                    </small>
+                                                </div>
+                                            </button>
+                                        ))
+                                    )}
+
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="col-12 col-xl-7">
+
+                            {!pedidoHistorialSeleccionado ? (
+                                <div className="card border-0 shadow-sm rounded-4">
+                                    <div className="card-body p-5 text-center">
+                                        <i className="bi bi-receipt fs-1 text-muted"></i>
+
+                                        <p className="text-muted mt-3 mb-0">
+                                            Selecciona un pedido finalizado para confirmar recibido o reportar problema.
+                                        </p>
+                                    </div>
+                                </div>
+                            ) : (
+                                <>
+                                    <div className="card border-0 shadow-sm rounded-4 mb-4">
+                                        <div className="card-body p-4">
+                                            <h4 className="fw-bold mb-3">
+                                                Comprobante de entrega
+                                            </h4>
+
+                                            {pedidoHistorialSeleccionado.estado === "cancelado" ? (
+                                                <div className="alert alert-danger mb-0">
+                                                    Este pedido fue cancelado.
+                                                </div>
+                                            ) : (
+                                                <>
+                                                    <p className="mb-2">
+                                                        <strong>Pedido:</strong> #{pedidoHistorialSeleccionado.id}
+                                                    </p>
+
+                                                    <p className="mb-2">
+                                                        <strong>Observación repartidor:</strong>{" "}
+                                                        {pedidoHistorialSeleccionado.observacion_entrega || "Sin observación"}
+                                                    </p>
+
+                                                    <p className="mb-3">
+                                                        <strong>Fecha entrega:</strong>{" "}
+                                                        {pedidoHistorialSeleccionado.fecha_entrega
+                                                            ? new Date(pedidoHistorialSeleccionado.fecha_entrega).toLocaleString()
+                                                            : "Sin fecha"}
+                                                    </p>
+
+                                                    {pedidoHistorialSeleccionado.confirmacion_cliente ? (
+                                                        <div className="alert alert-info mb-0">
+                                                            <p className="mb-2">
+                                                                <strong>Respuesta enviada:</strong>{" "}
+                                                                {pedidoHistorialSeleccionado.confirmacion_cliente === "confirmado"
+                                                                    ? "Pedido recibido correctamente"
+                                                                    : "Problema reportado"}
+                                                            </p>
+
+                                                            {pedidoHistorialSeleccionado.comentario_cliente && (
+                                                                <p className="mb-0">
+                                                                    <strong>Comentario:</strong>{" "}
+                                                                    {pedidoHistorialSeleccionado.comentario_cliente}
+                                                                </p>
+                                                            )}
+
+                                                            {pedidoHistorialSeleccionado.fecha_confirmacion_cliente && (
+                                                                <small className="text-muted">
+                                                                    {new Date(
+                                                                        pedidoHistorialSeleccionado.fecha_confirmacion_cliente
+                                                                    ).toLocaleString()}
+                                                                </small>
+                                                            )}
+                                                        </div>
+                                                    ) : (
+                                                        <>
+                                                            <textarea
+                                                                className="form-control mb-3"
+                                                                rows="3"
+                                                                placeholder="Comentario opcional o describa el problema"
+                                                                value={
+                                                                    comentariosCliente[pedidoHistorialSeleccionado.id] || ""
+                                                                }
+                                                                onChange={(e) =>
+                                                                    setComentariosCliente({
+                                                                        ...comentariosCliente,
+                                                                        [pedidoHistorialSeleccionado.id]: e.target.value
+                                                                    })
+                                                                }
+                                                            ></textarea>
+
+                                                            <div className="d-flex flex-column flex-md-row gap-2">
+                                                                <button
+                                                                    className="btn btn-success"
+                                                                    onClick={() =>
+                                                                        handleConfirmarRecepcion(
+                                                                            pedidoHistorialSeleccionado,
+                                                                            "confirmado"
+                                                                        )
+                                                                    }
+                                                                >
+                                                                    Confirmar recibido
+                                                                </button>
+
+                                                                <button
+                                                                    className="btn btn-danger"
+                                                                    onClick={() =>
+                                                                        handleConfirmarRecepcion(
+                                                                            pedidoHistorialSeleccionado,
+                                                                            "problema"
+                                                                        )
+                                                                    }
+                                                                >
+                                                                    Reportar problema
+                                                                </button>
+                                                            </div>
+                                                        </>
+                                                    )}
+                                                </>
+                                            )}
+                                        </div>
+                                    </div>
+
+                                    <div className="card border-0 shadow-sm rounded-4">
+                                        <div className="card-body p-4">
+                                            <h4 className="fw-bold mb-3">
+                                                Historial del pedido
+                                            </h4>
+
+                                            {historial.length === 0 ? (
+                                                <p className="text-muted mb-0">
+                                                    Este pedido aún no tiene historial.
+                                                </p>
+                                            ) : (
+                                                <ul className="list-group list-group-flush">
+                                                    {historial.map((item) => (
+                                                        <li
+                                                            className="list-group-item"
+                                                            key={item.id}
+                                                        >
+                                                            <div className="d-flex justify-content-between gap-2">
+                                                                <span className={getEstadoBadge(item.estado)}>
+                                                                    {item.estado}
+                                                                </span>
+
+                                                                <small className="text-muted">
+                                                                    {new Date(item.fecha).toLocaleString()}
+                                                                </small>
+                                                            </div>
+
+                                                            <p className="mt-2 mb-0">
+                                                                {item.comentario}
+                                                            </p>
+                                                        </li>
+                                                    ))}
+                                                </ul>
+                                            )}
+                                        </div>
+                                    </div>
+                                </>
+                            )}
+
+                        </div>
+
+                    </div>
+                )}
+
             </main>
+
         </div>
     );
 }

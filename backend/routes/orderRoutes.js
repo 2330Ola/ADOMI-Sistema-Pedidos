@@ -45,6 +45,7 @@ router.put(
     orderController.confirmClientReception
 );
 
+
 // =========================
 // REPARTIDOR
 // =========================
@@ -151,7 +152,7 @@ router.put(
 // ADMIN
 // =========================
 
-// Nueva ruta
+// Obtener todos los pedidos
 router.get(
     "/all",
     verifyToken,
@@ -159,12 +160,20 @@ router.get(
     orderController.getAllOrders
 );
 
-// Compatibilidad con versiones anteriores
+// Compatibilidad
 router.get(
     "/",
     verifyToken,
     isAdmin,
     orderController.getAllOrders
+);
+
+// Reactivar pedido cancelado
+router.put(
+    "/:id/reactivar",
+    verifyToken,
+    isAdmin,
+    orderController.reactivateCancelledOrder
 );
 
 
