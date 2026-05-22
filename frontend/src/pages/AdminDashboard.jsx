@@ -38,44 +38,16 @@ function AdminDashboard() {
     const [passwordRepartidor, setPasswordRepartidor] = useState("");
 
     const pedidosChartData = stats ? [
-        {
-            name: "Pendientes",
-            cantidad: stats.pedidos_pendientes || 0,
-            color: "#6c757d"
-        },
-        {
-            name: "Aceptados",
-            cantidad: stats.pedidos_aceptados || 0,
-            color: "#0d6efd"
-        },
-        {
-            name: "En camino",
-            cantidad: stats.pedidos_en_camino || 0,
-            color: "#ffc107"
-        },
-        {
-            name: "Entregados",
-            cantidad: stats.pedidos_entregados || 0,
-            color: "#198754"
-        },
-        {
-            name: "Cancelados",
-            cantidad: stats.pedidos_cancelados || 0,
-            color: "#dc3545"
-        }
+        { name: "Pendientes", cantidad: stats.pedidos_pendientes || 0, color: "#6c757d" },
+        { name: "Aceptados", cantidad: stats.pedidos_aceptados || 0, color: "#0d6efd" },
+        { name: "En camino", cantidad: stats.pedidos_en_camino || 0, color: "#ffc107" },
+        { name: "Entregados", cantidad: stats.pedidos_entregados || 0, color: "#198754" },
+        { name: "Cancelados", cantidad: stats.pedidos_cancelados || 0, color: "#dc3545" }
     ] : [];
 
     const usuariosChartData = stats ? [
-        {
-            name: "Clientes",
-            value: stats.total_clientes || 0,
-            color: "#0d6efd"
-        },
-        {
-            name: "Repartidores",
-            value: stats.total_repartidores || 0,
-            color: "#198754"
-        }
+        { name: "Clientes", value: stats.total_clientes || 0, color: "#0d6efd" },
+        { name: "Repartidores", value: stats.total_repartidores || 0, color: "#198754" }
     ] : [];
 
     const cargarDashboard = async () => {
@@ -87,7 +59,6 @@ function AdminDashboard() {
             setStats(statsData.stats);
             setUsuarios(usuariosData.usuarios);
             setPedidos(pedidosData.pedidos);
-
         } catch (error) {
             setError("No se pudo cargar la información del administrador");
         }
@@ -128,7 +99,6 @@ function AdminDashboard() {
                 const data = await getDeliveryUsers();
                 setUsuarios(data.repartidores);
             }
-
         } catch (error) {
             setError("No se pudieron cargar los usuarios");
         }
@@ -144,12 +114,10 @@ function AdminDashboard() {
 
         try {
             await updateUserStatus(usuario.id, nuevoEstado);
-
             setMensaje("Estado actualizado correctamente");
 
             await cambiarVista(vista);
             await cargarDashboard();
-
         } catch (error) {
             setError(
                 error.response?.data?.message ||
@@ -179,7 +147,6 @@ function AdminDashboard() {
 
             await cargarDashboard();
             await cambiarVista("repartidores");
-
         } catch (error) {
             setError(
                 error.response?.data?.message ||
@@ -207,6 +174,30 @@ function AdminDashboard() {
         if (rol === "repartidor") return "badge bg-warning text-dark";
 
         return "badge bg-secondary";
+    };
+
+    const getConfirmacionClienteBadge = (confirmacion) => {
+        if (confirmacion === "confirmado") {
+            return (
+                <span className="badge bg-success">
+                    Confirmado
+                </span>
+            );
+        }
+
+        if (confirmacion === "problema") {
+            return (
+                <span className="badge bg-danger">
+                    Problema
+                </span>
+            );
+        }
+
+        return (
+            <span className="badge bg-secondary">
+                Pendiente
+            </span>
+        );
     };
 
     const mostrarDiferencia = (diferencia) => {
@@ -273,7 +264,7 @@ function AdminDashboard() {
                                 </h2>
 
                                 <p className="text-muted mb-0">
-                                    Gestión general de usuarios, repartidores y pedidos de ADOMI.
+                                    Gestión general de usuarios, repartidores, pedidos, comprobantes y confirmaciones del cliente.
                                 </p>
                             </div>
                         </div>
@@ -365,6 +356,7 @@ function AdminDashboard() {
                                         <p className="text-muted mb-1">
                                             Ingresos entregados
                                         </p>
+
                                         <h3 className="fw-bold">
                                             Q {stats?.ingresos_entregados || "0.00"}
                                         </h3>
@@ -484,6 +476,7 @@ function AdminDashboard() {
                                 </ul>
                             </div>
                         </div>
+
                     </div>
 
                     <div className="col-12 col-xl-8">
@@ -680,6 +673,11 @@ function AdminDashboard() {
                                                     <th>Estimado</th>
                                                     <th>Real</th>
                                                     <th>Diferencia</th>
+                                                    <th>Observación entrega</th>
+                                                    <th>Fecha entrega</th>
+                                                    <th>Confirmación cliente</th>
+                                                    <th>Comentario cliente</th>
+                                                    <th>Fecha confirmación</th>
                                                 </tr>
                                             </thead>
 
@@ -718,6 +716,34 @@ function AdminDashboard() {
 
                                                         <td>
                                                             {mostrarDiferencia(pedido.diferencia)}
+                                                        </td>
+
+                                                        <td style={{ minWidth: "220px" }}>
+                                                            {pedido.observacion_entrega || "Pendiente"}
+                                                        </td>
+
+                                                        <td style={{ minWidth: "160px" }}>
+                                                            {pedido.fecha_entrega
+                                                                ? new Date(pedido.fecha_entrega).toLocaleString()
+                                                                : "Pendiente"}
+                                                        </td>
+
+                                                        <td>
+                                                            {getConfirmacionClienteBadge(
+                                                                pedido.confirmacion_cliente
+                                                            )}
+                                                        </td>
+
+                                                        <td style={{ minWidth: "250px" }}>
+                                                            {pedido.comentario_cliente || "Sin comentario"}
+                                                        </td>
+
+                                                        <td style={{ minWidth: "160px" }}>
+                                                            {pedido.fecha_confirmacion_cliente
+                                                                ? new Date(
+                                                                    pedido.fecha_confirmacion_cliente
+                                                                ).toLocaleString()
+                                                                : "Pendiente"}
                                                         </td>
                                                     </tr>
                                                 ))}

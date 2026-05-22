@@ -11,6 +11,11 @@ const {
     isAdmin
 } = require("../middleware/authMiddleware");
 
+
+// =========================
+// CLIENTE
+// =========================
+
 router.post(
     "/",
     verifyToken,
@@ -19,12 +24,39 @@ router.post(
 );
 
 router.get(
+    "/my-orders",
+    verifyToken,
+    isCliente,
+    orderController.getMyOrders
+);
+
+// Compatibilidad
+router.get(
     "/mis-pedidos",
     verifyToken,
     isCliente,
     orderController.getMyOrders
 );
 
+router.put(
+    "/:id/confirmar-recepcion",
+    verifyToken,
+    isCliente,
+    orderController.confirmClientReception
+);
+
+// =========================
+// REPARTIDOR
+// =========================
+
+router.get(
+    "/pending",
+    verifyToken,
+    isRepartidor,
+    orderController.getPendingOrders
+);
+
+// Compatibilidad
 router.get(
     "/pendientes",
     verifyToken,
@@ -33,12 +65,28 @@ router.get(
 );
 
 router.get(
+    "/my-deliveries",
+    verifyToken,
+    isRepartidor,
+    orderController.getMyDeliveries
+);
+
+// Compatibilidad
+router.get(
     "/mis-entregas",
     verifyToken,
     isRepartidor,
     orderController.getMyDeliveries
 );
 
+router.put(
+    "/:id/accept",
+    verifyToken,
+    isRepartidor,
+    orderController.acceptOrder
+);
+
+// Compatibilidad
 router.put(
     "/:id/aceptar",
     verifyToken,
@@ -47,12 +95,28 @@ router.put(
 );
 
 router.put(
+    "/:id/reject",
+    verifyToken,
+    isRepartidor,
+    orderController.rejectOrder
+);
+
+// Compatibilidad
+router.put(
     "/:id/rechazar",
     verifyToken,
     isRepartidor,
     orderController.rejectOrder
 );
 
+router.put(
+    "/:id/status",
+    verifyToken,
+    isRepartidor,
+    orderController.updateOrderStatus
+);
+
+// Compatibilidad
 router.put(
     "/:id/estado",
     verifyToken,
@@ -61,23 +125,64 @@ router.put(
 );
 
 router.put(
+    "/:id/confirm-total",
+    verifyToken,
+    isRepartidor,
+    orderController.confirmRealTotal
+);
+
+// Compatibilidad
+router.put(
     "/:id/confirmar-total",
     verifyToken,
     isRepartidor,
     orderController.confirmRealTotal
 );
 
-router.get(
-    "/:id/historial",
+router.put(
+    "/:id/confirmar-entrega",
     verifyToken,
-    orderController.getOrderHistory
+    isRepartidor,
+    orderController.confirmDelivery
 );
 
+
+// =========================
+// ADMIN
+// =========================
+
+// Nueva ruta
+router.get(
+    "/all",
+    verifyToken,
+    isAdmin,
+    orderController.getAllOrders
+);
+
+// Compatibilidad con versiones anteriores
 router.get(
     "/",
     verifyToken,
     isAdmin,
     orderController.getAllOrders
+);
+
+
+// =========================
+// HISTORIAL
+// =========================
+
+router.get(
+    "/:id/history",
+    verifyToken,
+    orderController.getOrderHistory
+);
+
+// Compatibilidad
+router.get(
+    "/:id/historial",
+    verifyToken,
+    orderController.getOrderHistory
 );
 
 module.exports = router;

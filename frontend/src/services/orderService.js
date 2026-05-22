@@ -25,7 +25,7 @@ export const createOrder = async (orderData) => {
 
 export const getMyOrders = async () => {
     const response = await api.get(
-        "/orders/mis-pedidos",
+        "/orders/my-orders",
         config()
     );
 
@@ -35,7 +35,7 @@ export const getMyOrders = async () => {
 // HISTORIAL
 export const getOrderHistory = async (orderId) => {
     const response = await api.get(
-        `/orders/${orderId}/historial`,
+        `/orders/${orderId}/history`,
         config()
     );
 
@@ -45,7 +45,7 @@ export const getOrderHistory = async (orderId) => {
 // REPARTIDOR
 export const getPendingOrders = async () => {
     const response = await api.get(
-        "/orders/pendientes",
+        "/orders/pending",
         config()
     );
 
@@ -54,7 +54,7 @@ export const getPendingOrders = async () => {
 
 export const getMyDeliveries = async () => {
     const response = await api.get(
-        "/orders/mis-entregas",
+        "/orders/my-deliveries",
         config()
     );
 
@@ -63,7 +63,7 @@ export const getMyDeliveries = async () => {
 
 export const acceptOrder = async (orderId) => {
     const response = await api.put(
-        `/orders/${orderId}/aceptar`,
+        `/orders/${orderId}/accept`,
         {},
         config()
     );
@@ -73,7 +73,7 @@ export const acceptOrder = async (orderId) => {
 
 export const updateOrderStatus = async (orderId, estado) => {
     const response = await api.put(
-        `/orders/${orderId}/estado`,
+        `/orders/${orderId}/status`,
         { estado },
         config()
     );
@@ -83,11 +83,50 @@ export const updateOrderStatus = async (orderId, estado) => {
 
 export const confirmRealTotal = async (orderId, totalReal, totalEstimado) => {
     const response = await api.put(
-        `/orders/${orderId}/confirmar-total`,
+        `/orders/${orderId}/confirm-total`,
         {
             total_real: Number(totalReal),
             total_estimado: Number(totalEstimado)
         },
+        config()
+    );
+
+    return response.data;
+};
+
+export const confirmDelivery = async (orderId, observacionEntrega) => {
+    const response = await api.put(
+        `/orders/${orderId}/confirmar-entrega`,
+        {
+            observacion_entrega: observacionEntrega
+        },
+        config()
+    );
+
+    return response.data;
+};
+
+export const confirmClientReception = async (
+    orderId,
+    confirmacionCliente,
+    comentarioCliente
+) => {
+    const response = await api.put(
+        `/orders/${orderId}/confirmar-recepcion`,
+        {
+            confirmacion_cliente: confirmacionCliente,
+            comentario_cliente: comentarioCliente
+        },
+        config()
+    );
+
+    return response.data;
+};
+
+// ADMIN
+export const getAllOrdersAdmin = async () => {
+    const response = await api.get(
+        "/orders/all",
         config()
     );
 

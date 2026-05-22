@@ -5,7 +5,8 @@ import {
     getMyDeliveries,
     acceptOrder,
     updateOrderStatus,
-    confirmRealTotal
+    confirmRealTotal,
+    confirmDelivery
 } from "../services/orderService";
 
 import { updateMyLocation } from "../services/locationService";
@@ -19,7 +20,9 @@ function RepartidorDashboard() {
     const [mensaje, setMensaje] = useState("");
     const [error, setError] = useState("");
     const [notificacion, setNotificacion] = useState("");
+
     const [totalesReales, setTotalesReales] = useState({});
+    const [observacionesEntrega, setObservacionesEntrega] = useState({});
     const [pedidoChat, setPedidoChat] = useState(null);
 
     const [ubicacionActiva, setUbicacionActiva] = useState(false);
@@ -91,6 +94,7 @@ function RepartidorDashboard() {
 
                 try {
                     await updateMyLocation(latitud, longitud);
+
                     setUbicacionActiva(true);
                     setUbicacionMensaje("Ubicación compartida correctamente");
                 } catch (error) {
@@ -157,6 +161,35 @@ function RepartidorDashboard() {
         }
     };
 
+    const handleConfirmarEntrega = async (pedido) => {
+        limpiarMensajes();
+
+        const observacion = observacionesEntrega[pedido.id];
+
+        if (!observacion || !observacion.trim()) {
+            setError("Ingrese una observación de entrega");
+            return;
+        }
+
+        try {
+            await confirmDelivery(pedido.id, observacion);
+
+            setMensaje("Entrega confirmada correctamente");
+
+            setObservacionesEntrega({
+                ...observacionesEntrega,
+                [pedido.id]: ""
+            });
+
+            cargarDatos(false);
+        } catch (error) {
+            setError(
+                error.response?.data?.message ||
+                "Error al confirmar entrega"
+            );
+        }
+    };
+
     const getEstadoBadge = (estado) => {
         if (estado === "pendiente") return "badge bg-secondary";
         if (estado === "aceptado") return "badge bg-primary";
@@ -198,7 +231,7 @@ function RepartidorDashboard() {
                         </h2>
 
                         <p className="text-muted mb-0">
-                            Acepta pedidos, actualiza estados, confirma el total real y comunícate con el cliente.
+                            Acepta pedidos, actualiza estados, confirma total real y registra comprobante de entrega.
                         </p>
 
                         <div className="mt-3 d-flex flex-wrap gap-2">
@@ -255,6 +288,7 @@ function RepartidorDashboard() {
                 <div className="row g-4">
 
                     <div className="col-12 col-lg-5">
+
                         <div className="card border-0 shadow-sm rounded-4">
                             <div className="card-body p-4">
 
@@ -338,9 +372,11 @@ function RepartidorDashboard() {
                                 )}
                             </div>
                         </div>
+
                     </div>
 
                     <div className="col-12 col-lg-7">
+
                         <div className="card border-0 shadow-sm rounded-4">
                             <div className="card-body p-4">
 
@@ -371,7 +407,8 @@ function RepartidorDashboard() {
                                                     <th>Estado</th>
                                                     <th>Estimado</th>
                                                     <th>Real</th>
-                                                    <th>Acción</th>
+                                                    <th>Gestión</th>
+                                                    <th>Entrega</th>
                                                     <th>Chat</th>
                                                 </tr>
                                             </thead>
@@ -412,7 +449,7 @@ function RepartidorDashboard() {
                                                         </td>
 
                                                         <td style={{ minWidth: "280px" }}>
-                                                            <div className="d-flex gap-2 flex-column flex-md-row">
+                                                            <div className="d-flex gap-2 flex-column">
                                                                 <select
                                                                     className="form-select form-select-sm"
                                                                     value={pedido.estado}
@@ -427,58 +464,97 @@ function RepartidorDashboard() {
                                                                     <option value="aceptado">
                                                                         Aceptado
                                                                     </option>
+
                                                                     <option value="en camino">
                                                                         En camino
                                                                     </option>
-                                                                    <option value="entregado">
-                                                                        Entregado
-                                                                    </option>
+
                                                                     <option value="cancelado">
                                                                         Cancelado
                                                                     </option>
                                                                 </select>
 
-                                                                <input
-                                                                    type="number"
-                                                                    className="form-control form-control-sm"
-                                                                    placeholder="Total real"
-                                                                    disabled={
-                                                                        pedidoBloqueado(pedido) ||
-                                                                        pedido.total_real !== null
-                                                                    }
-                                                                    value={totalesReales[pedido.id] || ""}
-                                                                    onChange={(e) =>
-                                                                        setTotalesReales({
-                                                                            ...totalesReales,
-                                                                            [pedido.id]: e.target.value
-                                                                        })
-                                                                    }
-                                                                />
+                                                                <div className="d-flex gap-2">
+                                                                    <input
+                                                                        type="number"
+                                                                        className="form-control form-control-sm"
+                                                                        placeholder="Total real"
+                                                                        disabled={
+                                                                            pedidoBloqueado(pedido) ||
+                                                                            pedido.total_real !== null
+                                                                        }
+                                                                        value={totalesReales[pedido.id] || ""}
+                                                                        onChange={(e) =>
+                                                                            setTotalesReales({
+                                                                                ...totalesReales,
+                                                                                [pedido.id]: e.target.value
+                                                                            })
+                                                                        }
+                                                                    />
 
-                                                                <button
-                                                                    className="btn btn-primary btn-sm"
-                                                                    disabled={
-                                                                        pedidoBloqueado(pedido) ||
-                                                                        pedido.total_real !== null
-                                                                    }
-                                                                    onClick={() => handleConfirmarTotal(pedido)}
-                                                                >
-                                                                    OK
-                                                                </button>
+                                                                    <button
+                                                                        className="btn btn-primary btn-sm"
+                                                                        disabled={
+                                                                            pedidoBloqueado(pedido) ||
+                                                                            pedido.total_real !== null
+                                                                        }
+                                                                        onClick={() => handleConfirmarTotal(pedido)}
+                                                                    >
+                                                                        OK
+                                                                    </button>
+                                                                </div>
+
+                                                                {pedido.total_real !== null &&
+                                                                    !pedidoBloqueado(pedido) && (
+                                                                        <small className="text-muted">
+                                                                            Total ya confirmado.
+                                                                        </small>
+                                                                    )}
                                                             </div>
+                                                        </td>
 
-                                                            {pedidoBloqueado(pedido) && (
-                                                                <small className="text-muted">
-                                                                    Pedido finalizado, no editable.
-                                                                </small>
+                                                        <td style={{ minWidth: "260px" }}>
+                                                            {pedido.estado === "entregado" ? (
+                                                                <div>
+                                                                    <span className="badge bg-success mb-2">
+                                                                        Entregado
+                                                                    </span>
+
+                                                                    <p className="small mb-1">
+                                                                        {pedido.observacion_entrega || "Sin observación"}
+                                                                    </p>
+
+                                                                    {pedido.fecha_entrega && (
+                                                                        <small className="text-muted">
+                                                                            {new Date(pedido.fecha_entrega).toLocaleString()}
+                                                                        </small>
+                                                                    )}
+                                                                </div>
+                                                            ) : (
+                                                                <div className="d-flex flex-column gap-2">
+                                                                    <textarea
+                                                                        className="form-control form-control-sm"
+                                                                        rows="2"
+                                                                        placeholder="Observación de entrega"
+                                                                        disabled={pedidoBloqueado(pedido)}
+                                                                        value={observacionesEntrega[pedido.id] || ""}
+                                                                        onChange={(e) =>
+                                                                            setObservacionesEntrega({
+                                                                                ...observacionesEntrega,
+                                                                                [pedido.id]: e.target.value
+                                                                            })
+                                                                        }
+                                                                    ></textarea>
+
+                                                                    <button
+                                                                        className="btn btn-success btn-sm"
+                                                                        disabled={pedidoBloqueado(pedido)}
+                                                                        onClick={() => handleConfirmarEntrega(pedido)}
+                                                                    >
+                                                                        Confirmar entrega
+                                                                    </button>
+                                                                </div>
                                                             )}
-
-                                                            {pedido.total_real !== null &&
-                                                                !pedidoBloqueado(pedido) && (
-                                                                    <small className="text-muted">
-                                                                        Total ya confirmado.
-                                                                    </small>
-                                                                )}
                                                         </td>
 
                                                         <td>
@@ -498,6 +574,7 @@ function RepartidorDashboard() {
 
                             </div>
                         </div>
+
                     </div>
 
                 </div>

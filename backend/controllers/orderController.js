@@ -1,6 +1,22 @@
 const orderModel = require("../models/orderModel");
 const historyModel = require("../models/historyModel");
 
+const emitPedidoActualizado = (req, pedidoId, data = {}) => {
+    const io = req.app.get("io");
+
+    if (!io) {
+        return;
+    }
+
+    io.to(`pedido_${pedidoId}`).emit(
+        "pedidoActualizado",
+        {
+            id: Number(pedidoId),
+            ...data
+        }
+    );
+};
+
 const createOrder = (req, res) => {
     const clienteId = req.user.id;
 
@@ -39,6 +55,10 @@ const createOrder = (req, res) => {
                 "Pedido creado por el cliente",
                 () => {}
             );
+
+            emitPedidoActualizado(req, pedidoId, {
+                estado: "pendiente"
+            });
 
             res.status(201).json({
                 message: "Pedido creado correctamente",
@@ -125,6 +145,11 @@ const acceptOrder = (req, res) => {
             () => {}
         );
 
+        emitPedidoActualizado(req, pedidoId, {
+            estado: "aceptado",
+            repartidor_id: repartidorId
+        });
+
         res.json({
             message: "Pedido aceptado correctamente"
         });
@@ -144,7 +169,7 @@ const rejectOrder = (req, res) => {
 
         if (result.affectedRows === 0) {
             return res.status(400).json({
-                message: "No puede rechazar este pedido. Ya fue entregado, cancelado o no existe."
+                message: "No puede rechazar este pedido"
             });
         }
 
@@ -154,6 +179,11 @@ const rejectOrder = (req, res) => {
             "Pedido rechazado y devuelto a pendientes",
             () => {}
         );
+
+        emitPedidoActualizado(req, pedidoId, {
+            estado: "pendiente",
+            repartidor_id: null
+        });
 
         res.json({
             message: "Pedido rechazado correctamente"
@@ -167,7 +197,11 @@ const updateOrderStatus = (req, res) => {
 
     const { estado } = req.body || {};
 
-    const estadosPermitidos = ["aceptado", "en camino", "entregado", "cancelado"];
+    const estadosPermitidos = [
+        "aceptado",
+        "en camino",
+        "cancelado"
+    ];
 
     if (!estadosPermitidos.includes(estado)) {
         return res.status(400).json({
@@ -200,6 +234,10 @@ const updateOrderStatus = (req, res) => {
                 () => {}
             );
 
+            emitPedidoActualizado(req, pedidoId, {
+                estado
+            });
+
             res.json({
                 message: "Estado actualizado correctamente"
             });
@@ -211,7 +249,10 @@ const confirmRealTotal = (req, res) => {
     const repartidorId = req.user.id;
     const pedidoId = req.params.id;
 
-    const { total_real, total_estimado } = req.body || {};
+    const {
+        total_real,
+        total_estimado
+    } = req.body || {};
 
     if (!total_real || !total_estimado) {
         return res.status(400).json({
@@ -256,10 +297,142 @@ const confirmRealTotal = (req, res) => {
                 () => {}
             );
 
+            emitPedidoActualizado(req, pedidoId, {
+                total_real: totalRealNumber,
+                diferencia
+            });
+
             res.json({
                 message: "Total real confirmado correctamente",
                 total_real: totalRealNumber,
                 diferencia
+            });
+        }
+    );
+};
+
+const confirmDelivery = (req, res) => {
+    const repartidorId = req.user.id;
+    const pedidoId = req.params.id;
+
+    const { observacion_entrega } = req.body || {};
+
+    if (!observacion_entrega || !observacion_entrega.trim()) {
+        return res.status(400).json({
+            message: "La observación de entrega es obligatoria"
+        });
+    }
+
+    orderModel.confirmDelivery(
+        pedidoId,
+        repartidorId,
+        observacion_entrega.trim(),
+        (err, result) => {
+            if (err) {
+                return res.status(500).json({
+                    message: "Error al confirmar entrega",
+                    error: err
+                });
+            }
+
+            if (result.affectedRows === 0) {
+                return res.status(400).json({
+                    message: "No puede confirmar esta entrega. Ya fue entregada, cancelada o no le pertenece."
+                });
+            }
+
+            historyModel.createHistory(
+                pedidoId,
+                "entregado",
+                `Pedido entregado. Observación: ${observacion_entrega.trim()}`,
+                () => {}
+            );
+
+            emitPedidoActualizado(req, pedidoId, {
+                estado: "entregado",
+                observacion_entrega: observacion_entrega.trim(),
+                fecha_entrega: new Date().toISOString()
+            });
+
+            res.json({
+                message: "Entrega confirmada correctamente"
+            });
+        }
+    );
+};
+
+const confirmClientReception = (req, res) => {
+    const clienteId = req.user.id;
+    const pedidoId = req.params.id;
+
+    const {
+        confirmacion_cliente,
+        comentario_cliente
+    } = req.body || {};
+
+    const confirmacionesPermitidas = [
+        "confirmado",
+        "problema"
+    ];
+
+    if (!confirmacionesPermitidas.includes(confirmacion_cliente)) {
+        return res.status(400).json({
+            message: "Confirmación no válida"
+        });
+    }
+
+    if (
+        confirmacion_cliente === "problema" &&
+        (!comentario_cliente || !comentario_cliente.trim())
+    ) {
+        return res.status(400).json({
+            message: "Debe escribir el motivo del problema"
+        });
+    }
+
+    const comentarioFinal = comentario_cliente
+        ? comentario_cliente.trim()
+        : null;
+
+    orderModel.confirmClientReception(
+        pedidoId,
+        clienteId,
+        confirmacion_cliente,
+        comentarioFinal,
+        (err, result) => {
+            if (err) {
+                return res.status(500).json({
+                    message: "Error al confirmar recepción",
+                    error: err
+                });
+            }
+
+            if (result.affectedRows === 0) {
+                return res.status(400).json({
+                    message: "No puede confirmar este pedido. Puede que no esté entregado, no le pertenezca o ya fue confirmado."
+                });
+            }
+
+            const comentarioHistorial =
+                confirmacion_cliente === "confirmado"
+                    ? "Cliente confirmó que recibió el pedido correctamente"
+                    : `Cliente reportó un problema: ${comentarioFinal}`;
+
+            historyModel.createHistory(
+                pedidoId,
+                confirmacion_cliente,
+                comentarioHistorial,
+                () => {}
+            );
+
+            emitPedidoActualizado(req, pedidoId, {
+                confirmacion_cliente,
+                comentario_cliente: comentarioFinal,
+                fecha_confirmacion_cliente: new Date().toISOString()
+            });
+
+            res.json({
+                message: "Confirmación del cliente registrada correctamente"
             });
         }
     );
@@ -308,6 +481,8 @@ module.exports = {
     rejectOrder,
     updateOrderStatus,
     confirmRealTotal,
+    confirmDelivery,
+    confirmClientReception,
     getAllOrders,
     getOrderHistory
 };

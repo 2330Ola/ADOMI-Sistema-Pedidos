@@ -1,6 +1,13 @@
 const db = require("../config/db");
 
-const createOrder = (clienteId, tipoServicio, descripcion, direccion, total, callback) => {
+const createOrder = (
+    clienteId,
+    tipoServicio,
+    descripcion,
+    direccion,
+    total,
+    callback
+) => {
     const sql = `
         INSERT INTO pedidos
         (cliente_id, tipo_servicio, descripcion, direccion, total)
@@ -28,7 +35,8 @@ const getPendingOrders = (callback) => {
             usuarios.nombre AS cliente_nombre,
             usuarios.correo AS cliente_correo
         FROM pedidos
-        INNER JOIN usuarios ON pedidos.cliente_id = usuarios.id
+        INNER JOIN usuarios 
+            ON pedidos.cliente_id = usuarios.id
         WHERE pedidos.estado = 'pendiente'
         ORDER BY pedidos.created_at ASC
     `;
@@ -43,7 +51,8 @@ const getOrdersByDelivery = (repartidorId, callback) => {
             usuarios.nombre AS cliente_nombre,
             usuarios.correo AS cliente_correo
         FROM pedidos
-        INNER JOIN usuarios ON pedidos.cliente_id = usuarios.id
+        INNER JOIN usuarios 
+            ON pedidos.cliente_id = usuarios.id
         WHERE pedidos.repartidor_id = ?
         ORDER BY pedidos.created_at DESC
     `;
@@ -75,7 +84,12 @@ const rejectOrder = (pedidoId, callback) => {
     db.query(sql, [pedidoId], callback);
 };
 
-const updateOrderStatus = (pedidoId, repartidorId, estado, callback) => {
+const updateOrderStatus = (
+    pedidoId,
+    repartidorId,
+    estado,
+    callback
+) => {
     const sql = `
         UPDATE pedidos
         SET estado = ?
@@ -87,7 +101,13 @@ const updateOrderStatus = (pedidoId, repartidorId, estado, callback) => {
     db.query(sql, [estado, pedidoId, repartidorId], callback);
 };
 
-const confirmRealTotal = (pedidoId, repartidorId, totalReal, diferencia, callback) => {
+const confirmRealTotal = (
+    pedidoId,
+    repartidorId,
+    totalReal,
+    diferencia,
+    callback
+) => {
     const sql = `
         UPDATE pedidos
         SET total_real = ?,
@@ -101,6 +121,55 @@ const confirmRealTotal = (pedidoId, repartidorId, totalReal, diferencia, callbac
     db.query(sql, [totalReal, diferencia, pedidoId, repartidorId], callback);
 };
 
+const confirmDelivery = (
+    pedidoId,
+    repartidorId,
+    observacionEntrega,
+    callback
+) => {
+    const sql = `
+        UPDATE pedidos
+        SET estado = 'entregado',
+            observacion_entrega = ?,
+            fecha_entrega = CURRENT_TIMESTAMP
+        WHERE id = ?
+        AND repartidor_id = ?
+        AND estado NOT IN ('entregado', 'cancelado')
+    `;
+
+    db.query(sql, [observacionEntrega, pedidoId, repartidorId], callback);
+};
+
+const confirmClientReception = (
+    pedidoId,
+    clienteId,
+    confirmacionCliente,
+    comentarioCliente,
+    callback
+) => {
+    const sql = `
+        UPDATE pedidos
+        SET confirmacion_cliente = ?,
+            comentario_cliente = ?,
+            fecha_confirmacion_cliente = CURRENT_TIMESTAMP
+        WHERE id = ?
+        AND cliente_id = ?
+        AND estado = 'entregado'
+        AND confirmacion_cliente IS NULL
+    `;
+
+    db.query(
+        sql,
+        [
+            confirmacionCliente,
+            comentarioCliente,
+            pedidoId,
+            clienteId
+        ],
+        callback
+    );
+};
+
 const getAllOrders = (callback) => {
     const sql = `
         SELECT 
@@ -108,8 +177,10 @@ const getAllOrders = (callback) => {
             cliente.nombre AS cliente_nombre,
             repartidor.nombre AS repartidor_nombre
         FROM pedidos
-        INNER JOIN usuarios AS cliente ON pedidos.cliente_id = cliente.id
-        LEFT JOIN usuarios AS repartidor ON pedidos.repartidor_id = repartidor.id
+        INNER JOIN usuarios AS cliente 
+            ON pedidos.cliente_id = cliente.id
+        LEFT JOIN usuarios AS repartidor 
+            ON pedidos.repartidor_id = repartidor.id
         ORDER BY pedidos.created_at DESC
     `;
 
@@ -125,5 +196,7 @@ module.exports = {
     rejectOrder,
     updateOrderStatus,
     confirmRealTotal,
+    confirmDelivery,
+    confirmClientReception,
     getAllOrders
 };
