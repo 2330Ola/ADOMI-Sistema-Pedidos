@@ -1,7 +1,7 @@
 import axios from "axios";
 
 const api = axios.create({
-    baseURL: "http://localhost:3000/api"
+    baseURL: "https://adomi-sistema-pedidos.onrender.com/api"
 });
 
 export default api;
